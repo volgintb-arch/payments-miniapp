@@ -17,13 +17,14 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Invalid initData' }, { status: 401 });
   }
 
-  // Upsert пользователя
+  // Upsert пользователя (автоактивация)
   const user = await prisma.user.upsert({
     where: { telegramId: BigInt(tgUser.id) },
     update: {
       telegramUsername: tgUser.username || null,
       firstName: tgUser.first_name,
       lastName: tgUser.last_name || null,
+      isActive: true,
     },
     create: {
       telegramId: BigInt(tgUser.id),
@@ -31,15 +32,18 @@ export async function POST(request: Request) {
       firstName: tgUser.first_name,
       lastName: tgUser.last_name || null,
       role: 'EMPLOYEE',
-      isActive: false,
+      isActive: true,
     },
   });
 
-  if (!user.isActive) {
-    return Response.json(
-      { error: 'Account is not activated. Contact admin.' },
-      { status: 403 },
-    );
+  // Привязываем все юниты если ещё не привязаны
+  const allUnits = await prisma.unit.findMany({ select: { id: true } });
+  for (const unit of allUnits) {
+    await prisma.userUnit.upsert({
+      where: { userId_unitId: { userId: user.id, unitId: unit.id } },
+      update: {},
+      create: { userId: user.id, unitId: unit.id },
+    });
   }
 
   const token = createJwt(user.id, Number(user.telegramId), user.role);

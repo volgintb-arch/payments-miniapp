@@ -24,7 +24,6 @@ export async function GET(request: NextRequest) {
     where: {
       adeskGroupId: { in: groupIds },
       isArchived: false,
-      type: 2, // расход
     },
     orderBy: { name: 'asc' },
   });

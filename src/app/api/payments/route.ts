@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
 import { processRetroMatch } from '@/lib/retro-match';
+import { sendToGroup } from '@/lib/telegram';
 
 export async function GET(request: NextRequest) {
   const auth = requireAuth(request);
@@ -102,6 +103,19 @@ export async function POST(request: NextRequest) {
       status: 'PENDING_RETRO',
     },
   });
+
+  // Получаем названия для сообщения в группу
+  const unit = await prisma.unit.findUnique({ where: { id: Number(unitId) } });
+  const category = await prisma.categoryCache.findUnique({ where: { adeskId: Number(adeskCategoryId) } });
+
+  const lines = [
+    `<b>${unit?.name ?? 'Юнит'}</b>`,
+    category?.name ?? 'Статья',
+    `${Number(amount).toLocaleString('ru-RU')} ₽`,
+    cardNote || description || '',
+  ].filter(Boolean);
+
+  sendToGroup(lines.join('\n')).catch(() => {});
 
   // Запускаем ретро-матчинг асинхронно (не блокируем ответ)
   processRetroMatch(payment.id).catch((err) => {
