@@ -8,8 +8,12 @@ import { adesk } from '@/lib/adesk/client';
 import { requireRole } from '@/lib/api-helpers';
 
 export async function POST(request: NextRequest) {
-  const auth = requireRole(request, ['ADMIN']);
-  if (auth instanceof Response) return auth;
+  // Доступ по ADMIN_SECRET или JWT с ролью ADMIN
+  const secret = request.headers.get('x-admin-secret');
+  if (secret !== process.env.ADMIN_SECRET) {
+    const auth = requireRole(request, ['ADMIN']);
+    if (auth instanceof Response) return auth;
+  }
 
   // Получаем все категории с группами (outcome)
   const outcomeRes = await adesk.getCategories({ type: 'outcome', fullGroup: true });
