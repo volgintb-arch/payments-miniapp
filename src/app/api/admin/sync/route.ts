@@ -15,52 +15,30 @@ export async function POST(request: NextRequest) {
     if (auth instanceof Response) return auth;
   }
 
-  // Получаем все категории с группами (outcome)
+  // Adesk API возвращает плоский список categories с полями:
+  //   group: number (id группы)
+  //   groupObject: { id, name, type }
   const outcomeRes = await adesk.getCategories({ type: 'outcome', fullGroup: true });
   const incomeRes = await adesk.getCategories({ type: 'income', fullGroup: true });
 
   const now = new Date();
   let synced = 0;
 
-  // Обрабатываем категории из групп
   for (const res of [outcomeRes, incomeRes]) {
-    const groups = res.groups ?? [];
-    for (const group of groups) {
-      for (const cat of group.categories ?? []) {
-        await prisma.categoryCache.upsert({
-          where: { adeskId: cat.id },
-          update: {
-            name: cat.name,
-            type: cat.type,
-            adeskGroupId: group.id,
-            adeskGroupName: group.name,
-            isArchived: cat.isArchived ?? false,
-            lastSyncedAt: now,
-          },
-          create: {
-            adeskId: cat.id,
-            name: cat.name,
-            type: cat.type,
-            adeskGroupId: group.id,
-            adeskGroupName: group.name,
-            isArchived: cat.isArchived ?? false,
-            lastSyncedAt: now,
-          },
-        });
-        synced++;
-      }
-    }
-
-    // Категории без группы
-    const categories = res.categories ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const categories = (res as any).categories ?? [];
     for (const cat of categories) {
+      // group — число, groupObject — объект с id/name
+      const groupId: number | null = cat.group ?? cat.groupObject?.id ?? null;
+      const groupName: string | null = cat.groupObject?.name ?? null;
+
       await prisma.categoryCache.upsert({
         where: { adeskId: cat.id },
         update: {
           name: cat.name,
           type: cat.type,
-          adeskGroupId: cat.group?.id ?? null,
-          adeskGroupName: cat.group?.name ?? null,
+          adeskGroupId: groupId,
+          adeskGroupName: groupName,
           isArchived: cat.isArchived ?? false,
           lastSyncedAt: now,
         },
@@ -68,8 +46,8 @@ export async function POST(request: NextRequest) {
           adeskId: cat.id,
           name: cat.name,
           type: cat.type,
-          adeskGroupId: cat.group?.id ?? null,
-          adeskGroupName: cat.group?.name ?? null,
+          adeskGroupId: groupId,
+          adeskGroupName: groupName,
           isArchived: cat.isArchived ?? false,
           lastSyncedAt: now,
         },
