@@ -1,0 +1,174 @@
+// prisma/schema.prisma
+// Архитектура: ретро-поиск вместо плановых операций.
+//
+// Ключевые решения:
+//   - При создании платежа ищем существующую фактическую операцию в Adesk (ретро-поиск)
+//   - Если не нашли — остаёмся в PENDING_RETRO, cron повторяет поиск раз в сутки в течение 5 дней
+//   - Таблица Card удалена: карта — это свободное текстовое поле cardNote в Payment
+//   - Разделение юнитов происходит через группы статей (Adesk category groups)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  EMPLOYEE
+  APPROVER
+  ADMIN
+}
+
+enum PaymentStatus {
+  PENDING_RETRO   // создан, ищем в фактических операциях Adesk
+  MATCHED         // найден, статья проставлена
+  NEEDS_REVIEW    // несколько кандидатов — ручной разбор
+  ORPHANED        // 5 дней прошло, банк не прислал
+  CANCELLED       // отменён сотрудником или админом
+}
+
+// ========================================
+// ПОЛЬЗОВАТЕЛИ
+// ========================================
+
+model User {
+  id               String     @id @default(cuid())
+  telegramId       BigInt     @unique
+  telegramUsername  String?
+  firstName        String
+  lastName         String?
+  role             UserRole   @default(EMPLOYEE)
+  isActive         Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+
+  allowedUnits     UserUnit[]
+  payments         Payment[]
+}
+
+model UserUnit {
+  userId String
+  unitId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unit   Unit @relation(fields: [unitId], references: [id])
+  @@id([userId, unitId])
+}
+
+// ========================================
+// СПРАВОЧНИКИ
+// ========================================
+
+model Unit {
+  id                 Int      @id @default(autoincrement())
+  name               String   @unique
+  adeskLegalEntityId Int
+  createdAt          DateTime @default(now())
+
+  users              UserUnit[]
+  adeskGroups        UnitGroup[]
+  bankAccounts       UnitBankAccount[]
+  payments           Payment[]
+}
+
+model UnitGroup {
+  unitId         Int
+  adeskGroupId   Int
+  adeskGroupName String
+  sortOrder      Int     @default(0)
+  unit           Unit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@id([unitId, adeskGroupId])
+}
+
+model UnitBankAccount {
+  unitId             Int
+  adeskBankAccountId Int
+  unit               Unit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@id([unitId, adeskBankAccountId])
+}
+
+model CategoryCache {
+  adeskId        Int      @id
+  name           String
+  type           Int                       // 1 = доход, 2 = расход
+  adeskGroupId   Int?
+  adeskGroupName String?
+  isArchived     Boolean  @default(false)
+  lastSyncedAt   DateTime
+
+  @@index([adeskGroupId])
+  @@index([type, isArchived])
+}
+
+model ContractorCache {
+  adeskId       Int      @id
+  name          String
+  canonicalName String
+  lastSyncedAt  DateTime
+
+  @@index([canonicalName])
+}
+
+// ========================================
+// ПЛАТЕЖИ (основная таблица)
+// ========================================
+
+model Payment {
+  id                          String        @id @default(cuid())
+  userId                      String
+  unitId                      Int
+  adeskCategoryId             Int
+  adeskContractorId           Int?
+  contractorNameSnapshot      String?
+  amount                      Decimal       @db.Decimal(15, 2)
+  date                        DateTime      @db.Date
+  description                 String?
+  cardNote                    String?
+
+  status                      PaymentStatus @default(PENDING_RETRO)
+
+  adeskConfirmedTransactionId Int?
+
+  retroAttempts               Int           @default(0)
+  lastRetroAttemptAt          DateTime?
+
+  createdAt                   DateTime      @default(now())
+  matchedAt                   DateTime?
+
+  user                        User          @relation(fields: [userId], references: [id])
+  unit                        Unit          @relation(fields: [unitId], references: [id])
+
+  @@index([status])
+  @@index([status, createdAt])
+  @@index([unitId, amount, date])
+}
+
+model MatchConflict {
+  id                        String    @id @default(cuid())
+  paymentId                 String?
+  adeskTransactionId        Int?
+  candidatePaymentIds       String[]
+  candidateTransactionIds   Int[]
+  resolvedByPaymentId       String?
+  resolvedByTransactionId   Int?
+  resolvedByUserId          String?
+  createdAt                 DateTime  @default(now())
+  resolvedAt                DateTime?
+
+  @@index([resolvedAt])
+}
+
+model AdeskApiLog {
+  id             String   @id @default(cuid())
+  endpoint       String
+  method         String
+  requestBody    Json?
+  responseStatus Int
+  responseBody   Json?
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+}
