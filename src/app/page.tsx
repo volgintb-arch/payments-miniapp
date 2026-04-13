@@ -19,28 +19,42 @@ export default function Home() {
   const [tab, setTab] = useState<'create' | 'list'>('create');
 
   useEffect(() => {
+    // Даём время Telegram SDK загрузиться
+    const timer = setTimeout(() => {
+      init();
+    }, 500);
+    return () => clearTimeout(timer);
+
     async function init() {
       try {
         const token = localStorage.getItem('token');
         if (token) {
-          await apiFetch('/api/units');
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          setUser({
-            id: payload.sub,
-            firstName: '',
-            lastName: null,
-            role: payload.role,
-          });
-          setLoading(false);
-          return;
+          try {
+            await apiFetch('/api/units');
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            setUser({
+              id: payload.sub,
+              firstName: '',
+              lastName: null,
+              role: payload.role,
+            });
+            setLoading(false);
+            return;
+          } catch {
+            localStorage.removeItem('token');
+          }
         }
 
-        const tg = (window as unknown as { Telegram?: { WebApp?: { initData: string } } }).Telegram?.WebApp;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const tg = (window as any).Telegram?.WebApp;
         if (!tg?.initData) {
           setError('Откройте приложение через Telegram');
           setLoading(false);
           return;
         }
+
+        tg.ready();
+        tg.expand();
 
         const res = await apiFetch<{ token: string; user: UserInfo }>(
           '/api/auth/login',
@@ -58,8 +72,6 @@ export default function Home() {
         setLoading(false);
       }
     }
-
-    init();
   }, []);
 
   if (loading) {
