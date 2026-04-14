@@ -118,15 +118,15 @@ export async function POST(request: NextRequest) {
   const unit = await prisma.unit.findUnique({ where: { id: Number(unitId) } });
   const category = await prisma.categoryCache.findUnique({ where: { adeskId: Number(adeskCategoryId) } });
 
-  const lines = [
-    `<b>${unit?.name ?? 'Юнит'}</b>`,
+  const parts = [
+    unit?.name ?? 'Юнит',
     category?.name ?? 'Статья',
-    projectNameSnapshot ? `📁 ${projectNameSnapshot}` : '',
+    projectNameSnapshot || '',
     `${Number(amount).toLocaleString('ru-RU')} ₽`,
-    cardNote || description || '',
+    cardNote || '',
   ].filter(Boolean);
 
-  sendToGroup(lines.join('\n')).catch(() => {});
+  sendToGroup(parts.join(' / ')).catch(() => {});
 
   // Запускаем ретро-матчинг асинхронно (не блокируем ответ)
   processRetroMatch(payment.id).catch((err) => {
