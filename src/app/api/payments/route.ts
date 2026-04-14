@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body) return badRequest('Invalid JSON');
 
-  const { unitId, adeskCategoryId, adeskContractorId, amount, date, description, cardNote } = body;
+  const { unitId, adeskCategoryId, adeskProjectId, adeskContractorId, amount, date, description, cardNote } = body;
 
   if (!unitId || !adeskCategoryId || !amount || !date) {
     return badRequest('unitId, adeskCategoryId, amount, date are required');
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'No access to this unit' }, { status: 403 });
   }
 
-  // Снэпшот имени контрагента
+  // Снэпшоты имён
   let contractorNameSnapshot: string | null = null;
   if (adeskContractorId) {
     const cached = await prisma.contractorCache.findUnique({
@@ -88,14 +88,24 @@ export async function POST(request: NextRequest) {
     contractorNameSnapshot = cached?.name || null;
   }
 
+  let projectNameSnapshot: string | null = null;
+  if (adeskProjectId) {
+    const cached = await prisma.projectCache.findUnique({
+      where: { adeskId: Number(adeskProjectId) },
+    });
+    projectNameSnapshot = cached?.name || null;
+  }
+
   const payment = await prisma.payment.create({
     data: {
       id: globalThis.crypto.randomUUID(),
       userId: auth.userId,
       unitId: Number(unitId),
       adeskCategoryId: Number(adeskCategoryId),
+      adeskProjectId: adeskProjectId ? Number(adeskProjectId) : null,
       adeskContractorId: adeskContractorId ? Number(adeskContractorId) : null,
       contractorNameSnapshot,
+      projectNameSnapshot,
       amount: Number(amount),
       date: new Date(date),
       description: description || null,
@@ -111,6 +121,7 @@ export async function POST(request: NextRequest) {
   const lines = [
     `<b>${unit?.name ?? 'Юнит'}</b>`,
     category?.name ?? 'Статья',
+    projectNameSnapshot ? `📁 ${projectNameSnapshot}` : '',
     `${Number(amount).toLocaleString('ru-RU')} ₽`,
     cardNote || description || '',
   ].filter(Boolean);

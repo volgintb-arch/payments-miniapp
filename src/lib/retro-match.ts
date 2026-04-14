@@ -111,6 +111,9 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
       if (payment.adeskContractorId) {
         updates.contractorId = payment.adeskContractorId;
       }
+      if (payment.adeskProjectId) {
+        updates.projectId = payment.adeskProjectId;
+      }
       if (payment.description) {
         updates.description = payment.description;
       }
@@ -118,6 +121,7 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
       await adesk.updateTransaction(result.transactionId, updates as {
         categoryId?: number;
         contractorId?: number;
+        projectId?: number;
         description?: string;
       });
 

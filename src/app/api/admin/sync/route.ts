@@ -56,5 +56,33 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return Response.json({ ok: true, synced });
+  // === Синхронизация проектов ===
+  const projectsRes = await adesk.getProjects();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const projects = (projectsRes as any).projects ?? [];
+  let syncedProjects = 0;
+
+  for (const proj of projects) {
+    await prisma.projectCache.upsert({
+      where: { adeskId: proj.id },
+      update: {
+        name: proj.name,
+        adeskCategoryName: proj.category?.name ?? null,
+        isArchived: proj.isArchived ?? false,
+        isFinished: proj.isFinished ?? false,
+        lastSyncedAt: now,
+      },
+      create: {
+        adeskId: proj.id,
+        name: proj.name,
+        adeskCategoryName: proj.category?.name ?? null,
+        isArchived: proj.isArchived ?? false,
+        isFinished: proj.isFinished ?? false,
+        lastSyncedAt: now,
+      },
+    });
+    syncedProjects++;
+  }
+
+  return Response.json({ ok: true, synced, syncedProjects });
 }

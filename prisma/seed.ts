@@ -49,6 +49,7 @@ type UnitSeed = {
   adeskLegalEntityId: number;
   groups: Array<{ adeskGroupId: number; adeskGroupName: string; sortOrder: number }>;
   bankAccountIds: number[];
+  projectCategories: string[]; // названия категорий проектов в Adesk
 };
 
 const UNITS: UnitSeed[] = [
@@ -59,6 +60,7 @@ const UNITS: UnitSeed[] = [
       { adeskGroupId: ADESK_CATEGORY_GROUPS.BADABOOM, adeskGroupName: 'BADABOOM', sortOrder: 0 },
     ],
     bankAccountIds: [ADESK_BANK_ACCOUNTS.LOKTIONOV_SBER, ADESK_BANK_ACCOUNTS.LOKTIONOV_TOCHKA],
+    projectCategories: ['badaboom шоу'],
   },
   {
     name: 'OMG',
@@ -67,6 +69,7 @@ const UNITS: UnitSeed[] = [
       { adeskGroupId: ADESK_CATEGORY_GROUPS.OMG, adeskGroupName: 'OMG', sortOrder: 0 },
     ],
     bankAccountIds: [ADESK_BANK_ACCOUNTS.LOKTIONOV_SBER, ADESK_BANK_ACCOUNTS.LOKTIONOV_TOCHKA],
+    projectCategories: ['OMG'],
   },
   {
     name: 'БЕСЕДКА',
@@ -75,6 +78,7 @@ const UNITS: UnitSeed[] = [
       { adeskGroupId: ADESK_CATEGORY_GROUPS.BESEDKA, adeskGroupName: 'БЕСЕДКА', sortOrder: 0 },
     ],
     bankAccountIds: [ADESK_BANK_ACCOUNTS.LOKTIONOV_SBER, ADESK_BANK_ACCOUNTS.LOKTIONOV_TOCHKA],
+    projectCategories: [],
   },
   {
     name: 'Майс',
@@ -83,6 +87,7 @@ const UNITS: UnitSeed[] = [
       { adeskGroupId: ADESK_CATEGORY_GROUPS.MAIS, adeskGroupName: 'Майс', sortOrder: 0 },
     ],
     bankAccountIds: [ADESK_BANK_ACCOUNTS.LOKTIONOV_SBER, ADESK_BANK_ACCOUNTS.LOKTIONOV_TOCHKA],
+    projectCategories: ['Mice'],
   },
   {
     name: 'СИА',
@@ -91,6 +96,7 @@ const UNITS: UnitSeed[] = [
       { adeskGroupId: ADESK_CATEGORY_GROUPS.SIA, adeskGroupName: 'СИА', sortOrder: 0 },
     ],
     bankAccountIds: [ADESK_BANK_ACCOUNTS.LOKTIONOV_SBER, ADESK_BANK_ACCOUNTS.LOKTIONOV_TOCHKA],
+    projectCategories: [],
   },
   {
     name: 'ORGASTRO/URBAN/BAR',
@@ -100,6 +106,7 @@ const UNITS: UnitSeed[] = [
       { adeskGroupId: ADESK_CATEGORY_GROUPS.ORGASTRO_PROJECTS, adeskGroupName: 'Расходы по проектам 🔥', sortOrder: 1 },
     ],
     bankAccountIds: [ADESK_BANK_ACCOUNTS.VOLGIN_TOCHKA, ADESK_BANK_ACCOUNTS.VOLGIN_VTB_1, ADESK_BANK_ACCOUNTS.VOLGIN_VTB_2],
+    projectCategories: ['Orgastro', 'URBAN', 'HR Event', 'Бизнес event', 'Производство\\ монтажи', 'Сувенирка', 'Депозиты', 'Автобусы Кедровый'],
   },
   {
     name: 'Легенда об искателях',
@@ -108,6 +115,7 @@ const UNITS: UnitSeed[] = [
       { adeskGroupId: ADESK_CATEGORY_GROUPS.LEGENDA, adeskGroupName: 'Легенда об искателях', sortOrder: 0 },
     ],
     bankAccountIds: [ADESK_BANK_ACCOUNTS.VOLGIN_TOCHKA, ADESK_BANK_ACCOUNTS.VOLGIN_VTB_1, ADESK_BANK_ACCOUNTS.VOLGIN_VTB_2],
+    projectCategories: [],
   },
   {
     name: 'Расходы по франшизе',
@@ -116,6 +124,7 @@ const UNITS: UnitSeed[] = [
       { adeskGroupId: ADESK_CATEGORY_GROUPS.FRANCHISE, adeskGroupName: 'Расходы по франшизе', sortOrder: 0 },
     ],
     bankAccountIds: [ADESK_BANK_ACCOUNTS.VOLGIN_TOCHKA, ADESK_BANK_ACCOUNTS.VOLGIN_VTB_1, ADESK_BANK_ACCOUNTS.VOLGIN_VTB_2],
+    projectCategories: [],
   },
 ];
 
@@ -161,7 +170,18 @@ async function main() {
         },
       });
     }
-    console.log(`  bank accounts: ${unitSeed.bankAccountIds.length}\n`);
+    console.log(`  bank accounts: ${unitSeed.bankAccountIds.length}`);
+
+    await prisma.unitProjectCategory.deleteMany({ where: { unitId: unit.id } });
+    for (const cat of unitSeed.projectCategories) {
+      await prisma.unitProjectCategory.create({
+        data: {
+          unitId: unit.id,
+          adeskProjectCategory: cat,
+        },
+      });
+    }
+    console.log(`  project categories: ${unitSeed.projectCategories.length}\n`);
   }
 
   console.log('Seed completed.\n');

@@ -68,6 +68,7 @@ model Unit {
   users              UserUnit[]
   adeskGroups        UnitGroup[]
   bankAccounts       UnitBankAccount[]
+  projectCategories  UnitProjectCategory[]
   payments           Payment[]
 }
 
@@ -87,6 +88,14 @@ model UnitBankAccount {
   unit               Unit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   @@id([unitId, adeskBankAccountId])
+}
+
+model UnitProjectCategory {
+  unitId                Int
+  adeskProjectCategory  String    // название категории проекта в Adesk (OMG, Orgastro, etc.)
+  unit                  Unit      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@id([unitId, adeskProjectCategory])
 }
 
 model CategoryCache {
@@ -111,6 +120,17 @@ model ContractorCache {
   @@index([canonicalName])
 }
 
+model ProjectCache {
+  adeskId          Int      @id
+  name             String
+  adeskCategoryName String?    // категория проекта в Adesk (OMG, Orgastro, etc.) — для привязки к юниту
+  isArchived       Boolean  @default(false)
+  isFinished       Boolean  @default(false)
+  lastSyncedAt     DateTime
+
+  @@index([adeskCategoryName])
+}
+
 // ========================================
 // ПЛАТЕЖИ (основная таблица)
 // ========================================
@@ -120,8 +140,10 @@ model Payment {
   userId                      String
   unitId                      Int
   adeskCategoryId             Int
+  adeskProjectId              Int?
   adeskContractorId           Int?
   contractorNameSnapshot      String?
+  projectNameSnapshot         String?
   amount                      Decimal       @db.Decimal(15, 2)
   date                        DateTime      @db.Date
   description                 String?

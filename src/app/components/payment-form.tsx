@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '@/lib/hooks/use-api';
 
 type Unit = { id: number; name: string };
@@ -9,13 +9,40 @@ type CategoryGroup = {
   groupName: string;
   categories: { id: number; name: string }[];
 };
+type Project = { id: number; name: string };
 type Contractor = { id: number; name: string };
+
+// Все категории в плоский список для поиска
+function flattenCategories(groups: CategoryGroup[]) {
+  const result: { id: number; name: string; groupName: string }[] = [];
+  for (const g of groups) {
+    for (const c of g.categories) {
+      result.push({ id: c.id, name: c.name, groupName: g.groupName });
+    }
+  }
+  return result;
+}
 
 export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitId, setUnitId] = useState<number | null>(null);
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
+
+  // Статья — поиск
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryQuery, setCategoryQuery] = useState('');
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const categoryRef = useRef<HTMLDivElement>(null);
+
+  // Проект — поиск
+  const [projectId, setProjectId] = useState<number | null>(null);
+  const [projectName, setProjectName] = useState('');
+  const [projectQuery, setProjectQuery] = useState('');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const projectRef = useRef<HTMLDivElement>(null);
+
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
@@ -28,6 +55,20 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Закрытие выпадающих при клике вне
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (categoryRef.current && !categoryRef.current.contains(e.target as Node)) {
+        setShowCategoryDropdown(false);
+      }
+      if (projectRef.current && !projectRef.current.contains(e.target as Node)) {
+        setShowProjectDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   // Загрузка юнитов
   useEffect(() => {
@@ -47,9 +88,30 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
       (res) => {
         setGroups(res.groups);
         setCategoryId(null);
+        setCategoryName('');
+        setCategoryQuery('');
+        setProjectId(null);
+        setProjectName('');
+        setProjectQuery('');
       },
     );
   }, [unitId]);
+
+  // Поиск проектов с debounce
+  useEffect(() => {
+    if (!unitId) {
+      setProjects([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ unitId: String(unitId) });
+      if (projectQuery.length >= 2) params.set('q', projectQuery);
+      apiFetch<{ projects: Project[] }>(`/api/projects?${params}`).then(
+        (res) => setProjects(res.projects),
+      );
+    }, projectQuery.length >= 2 ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [unitId, projectQuery]);
 
   // Поиск контрагентов с debounce
   useEffect(() => {
@@ -65,6 +127,14 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
     return () => clearTimeout(timer);
   }, [contractorQuery]);
 
+  // Фильтрация категорий по запросу (локально)
+  const allCategories = flattenCategories(groups);
+  const filteredCategories = categoryQuery.length >= 1
+    ? allCategories.filter((c) =>
+        c.name.toLowerCase().includes(categoryQuery.toLowerCase()),
+      )
+    : allCategories;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!unitId || !categoryId || !amount || !date) return;
@@ -78,6 +148,7 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
         body: JSON.stringify({
           unitId,
           adeskCategoryId: categoryId,
+          adeskProjectId: projectId || undefined,
           adeskContractorId: contractorId,
           amount: parseFloat(amount),
           date,
@@ -93,6 +164,10 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
     }
   }
 
+  const inputClass = 'w-full border rounded-lg px-3 py-2 text-sm bg-white';
+  const dropdownClass = 'absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto';
+  const dropdownItemClass = 'w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0';
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Юнит */}
@@ -101,7 +176,7 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
         <select
           value={unitId ?? ''}
           onChange={(e) => setUnitId(Number(e.target.value) || null)}
-          className="w-full border rounded-lg px-3 py-2 text-sm"
+          className={inputClass}
           required
         >
           <option value="">Выберите юнит</option>
@@ -111,25 +186,126 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
         </select>
       </div>
 
-      {/* Статья расхода */}
-      <div>
+      {/* Статья расхода — с поиском */}
+      <div ref={categoryRef}>
         <label className="block text-sm font-medium mb-1">Статья расхода</label>
-        <select
-          value={categoryId ?? ''}
-          onChange={(e) => setCategoryId(Number(e.target.value) || null)}
-          className="w-full border rounded-lg px-3 py-2 text-sm"
-          required
-        >
-          <option value="">Выберите статью</option>
-          {groups.map((g) => (
-            <optgroup key={g.groupId} label={g.groupName}>
-              {g.categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        {categoryId ? (
+          <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
+            <span className="text-sm flex-1">{categoryName}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryId(null);
+                setCategoryName('');
+                setCategoryQuery('');
+              }}
+              className="text-xs text-red-500 hover:underline"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              type="text"
+              value={categoryQuery}
+              onChange={(e) => {
+                setCategoryQuery(e.target.value);
+                setShowCategoryDropdown(true);
+              }}
+              onFocus={() => setShowCategoryDropdown(true)}
+              className={inputClass}
+              placeholder="Поиск статьи..."
+            />
+            {showCategoryDropdown && filteredCategories.length > 0 && (
+              <div className={dropdownClass}>
+                {filteredCategories.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setCategoryId(c.id);
+                      setCategoryName(c.name);
+                      setShowCategoryDropdown(false);
+                      setCategoryQuery('');
+                    }}
+                    className={dropdownItemClass}
+                  >
+                    <div>{c.name}</div>
+                    <div className="text-xs text-gray-400">{c.groupName}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {showCategoryDropdown && filteredCategories.length === 0 && categoryQuery.length >= 1 && (
+              <div className={dropdownClass}>
+                <div className="px-3 py-2 text-sm text-gray-400">Ничего не найдено</div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Проект — с поиском */}
+      {unitId && (
+        <div ref={projectRef}>
+          <label className="block text-sm font-medium mb-1">Проект (опционально)</label>
+          {projectId ? (
+            <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
+              <span className="text-sm flex-1">{projectName}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectId(null);
+                  setProjectName('');
+                  setProjectQuery('');
+                }}
+                className="text-xs text-red-500 hover:underline"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <input
+                type="text"
+                value={projectQuery}
+                onChange={(e) => {
+                  setProjectQuery(e.target.value);
+                  setShowProjectDropdown(true);
+                }}
+                onFocus={() => setShowProjectDropdown(true)}
+                className={inputClass}
+                placeholder="Поиск проекта..."
+              />
+              {showProjectDropdown && projects.length > 0 && (
+                <div className={dropdownClass}>
+                  {projects.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setProjectId(p.id);
+                        setProjectName(p.name);
+                        setShowProjectDropdown(false);
+                        setProjectQuery('');
+                      }}
+                      className={dropdownItemClass}
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {showProjectDropdown && projects.length === 0 && projectQuery.length >= 2 && (
+                <div className={dropdownClass}>
+                  <div className="px-3 py-2 text-sm text-gray-400">Ничего не найдено</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Сумма */}
       <div>
@@ -140,7 +316,7 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
           min="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2 text-sm"
+          className={inputClass}
           placeholder="0.00"
           required
         />
@@ -153,7 +329,7 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2 text-sm"
+          className={inputClass}
           required
         />
       </div>
@@ -162,8 +338,8 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
       <div>
         <label className="block text-sm font-medium mb-1">Контрагент (опционально)</label>
         {contractorId ? (
-          <div className="flex items-center gap-2">
-            <span className="text-sm">{contractorName}</span>
+          <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
+            <span className="text-sm flex-1">{contractorName}</span>
             <button
               type="button"
               onClick={() => {
@@ -182,11 +358,11 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
               type="text"
               value={contractorQuery}
               onChange={(e) => setContractorQuery(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
+              className={inputClass}
               placeholder="Начните вводить имя..."
             />
             {contractors.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+              <div className={dropdownClass}>
                 {contractors.map((c) => (
                   <button
                     key={c.id}
@@ -197,7 +373,7 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
                       setContractors([]);
                       setContractorQuery('');
                     }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                    className={dropdownItemClass}
                   >
                     {c.name}
                   </button>
@@ -215,7 +391,7 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
           type="text"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2 text-sm"
+          className={inputClass}
           placeholder="За что платёж"
         />
       </div>
@@ -227,7 +403,7 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
           type="text"
           value={cardNote}
           onChange={(e) => setCardNote(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2 text-sm"
+          className={inputClass}
           placeholder="Например: Сбер *1234"
         />
       </div>

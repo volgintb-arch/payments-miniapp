@@ -131,9 +131,20 @@ export const adesk = {
     );
   },
 
+  // ===== Проекты =====
+  getProjects: () =>
+    request<{ projects: Array<{
+      id: number;
+      name: string;
+      isArchived: boolean;
+      isFinished: boolean;
+      category: { id: number; name: string } | null;
+    }> }>('GET', '/v1/projects'),
+
   updateTransaction: (id: number, updates: {
     categoryId?: number;
     contractorId?: number;
+    projectId?: number;
     description?: string;
   }) =>
     request<{ transactions: AdeskTransaction[] }>(
