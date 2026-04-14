@@ -14,7 +14,7 @@ import { adesk } from './adesk/client';
 import type { AdeskTransaction } from './adesk/types';
 
 type MatchResult =
-  | { status: 'matched'; transactionId: number }
+  | { status: 'matched'; transactionId: number; existingDescription?: string }
   | { status: 'needs_review'; candidates: number[] }
   | { status: 'not_found' };
 
@@ -82,7 +82,12 @@ export async function findMatchingTransaction(
   }
 
   if (candidates.length === 1) {
-    return { status: 'matched', transactionId: candidates[0] };
+    const matchedTx = uniqueTxs.get(candidates[0]);
+    return {
+      status: 'matched',
+      transactionId: candidates[0],
+      existingDescription: matchedTx?.description || '',
+    };
   }
 
   if (candidates.length > 1) {
@@ -114,8 +119,10 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
       if (payment.adeskProjectId) {
         updates.projectId = payment.adeskProjectId;
       }
-      if (payment.description) {
-        updates.description = payment.description;
+      // Дописываем описание из мини-аппа перед существующим описанием из банка
+      const parts = [payment.description, result.existingDescription].filter(Boolean);
+      if (parts.length > 0) {
+        updates.description = parts.join(' | ');
       }
 
       await adesk.updateTransaction(result.transactionId, updates as {
