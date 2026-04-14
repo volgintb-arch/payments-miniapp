@@ -70,11 +70,14 @@ export async function findMatchingTransaction(
     uniqueTxs.set(tx.id, tx);
   }
 
-  // Сравниваем суммы (Adesk amount — строка, payment.amount — Decimal)
+  // Сравниваем суммы только по картовым операциям (содержат "Терминал:" в описании)
   const paymentAmount = Number(payment.amount);
   const candidates: number[] = [];
 
   for (const tx of uniqueTxs.values()) {
+    const desc = tx.description || '';
+    if (!desc.includes('Терминал:')) continue; // пропускаем не-картовые операции
+
     const txAmount = Math.abs(Number(tx.amount));
     if (Math.abs(txAmount - paymentAmount) < 0.01) {
       candidates.push(tx.id);
