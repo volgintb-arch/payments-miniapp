@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
 import { processRetroMatch } from '@/lib/retro-match';
 import { sendToGroup } from '@/lib/telegram';
+import { adesk } from '@/lib/adesk/client';
 
 export async function GET(request: NextRequest) {
   const auth = requireAuth(request);
@@ -65,10 +66,15 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body) return badRequest('Invalid JSON');
 
-  const { unitId, adeskCategoryId, adeskProjectId, adeskContractorId, amount, date, description, cardNote, chatId } = body;
+  const { unitId, adeskCategoryId, adeskProjectId, adeskContractorId, amount, date, description, cardNote, chatId, paymentMethod, safeId } = body;
 
   if (!unitId || !adeskCategoryId || !amount || !date) {
     return badRequest('unitId, adeskCategoryId, amount, date are required');
+  }
+
+  const isCash = paymentMethod === 'cash';
+  if (isCash && !safeId) {
+    return badRequest('safeId is required for cash payments');
   }
 
   // Проверяем доступ к юниту
@@ -110,7 +116,9 @@ export async function POST(request: NextRequest) {
       date: new Date(date),
       description: description || null,
       cardNote: cardNote || null,
-      status: 'PENDING_RETRO',
+      paymentMethod: isCash ? 'cash' : 'card',
+      adeskSafeId: isCash ? Number(safeId) : null,
+      status: isCash ? 'MATCHED' : 'PENDING_RETRO',
     },
   });
 
@@ -123,15 +131,46 @@ export async function POST(request: NextRequest) {
     category?.name ?? 'Статья',
     projectNameSnapshot || '',
     `${Number(amount).toLocaleString('ru-RU')} ₽`,
-    cardNote || '',
+    isCash ? 'НАЛ' : (cardNote || ''),
   ].filter(Boolean);
 
   sendToGroup(parts.join(' / '), chatId || undefined).catch(() => {});
 
-  // Запускаем ретро-матчинг асинхронно (не блокируем ответ)
-  processRetroMatch(payment.id).catch((err) => {
-    console.error(`Retro-match failed for payment ${payment.id}:`, err);
-  });
+  if (isCash) {
+    // Наличные — создаём транзакцию в Adesk напрямую
+    (async () => {
+      try {
+        const res = await adesk.createTransaction({
+          amount: Number(amount),
+          date,
+          type: 'outcome',
+          bankAccountId: Number(safeId),
+          categoryId: Number(adeskCategoryId),
+          projectId: adeskProjectId ? Number(adeskProjectId) : undefined,
+          contractorId: adeskContractorId ? Number(adeskContractorId) : undefined,
+          description: description || undefined,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const txId = (res as any).transaction?.id || (res as any).id;
+        if (txId) {
+          await prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+              adeskConfirmedTransactionId: txId,
+              matchedAt: new Date(),
+            },
+          });
+        }
+      } catch (err) {
+        console.error(`Cash transaction creation failed for payment ${payment.id}:`, err);
+      }
+    })();
+  } else {
+    // Карта — запускаем ретро-матчинг асинхронно
+    processRetroMatch(payment.id).catch((err) => {
+      console.error(`Retro-match failed for payment ${payment.id}:`, err);
+    });
+  }
 
   return Response.json(
     { payment: { ...payment, amount: Number(payment.amount) } },

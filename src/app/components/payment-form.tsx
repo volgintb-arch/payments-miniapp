@@ -11,8 +11,8 @@ type CategoryGroup = {
 };
 type Project = { id: number; name: string };
 type Contractor = { id: number; name: string };
+type Safe = { id: number; name: string };
 
-// Все категории в плоский список для поиска
 function flattenCategories(groups: CategoryGroup[]) {
   const result: { id: number; name: string; groupName: string }[] = [];
   for (const g of groups) {
@@ -24,6 +24,8 @@ function flattenCategories(groups: CategoryGroup[]) {
 }
 
 export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chatId?: string | null }) {
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
+
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitId, setUnitId] = useState<number | null>(null);
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
@@ -42,6 +44,10 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
   const [projects, setProjects] = useState<Project[]>([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const projectRef = useRef<HTMLDivElement>(null);
+
+  // Сейф (для наличных)
+  const [safes, setSafes] = useState<Safe[]>([]);
+  const [safeId, setSafeId] = useState<number | null>(null);
 
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -75,6 +81,13 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
     apiFetch<{ units: Unit[] }>('/api/units').then((res) => {
       setUnits(res.units);
       if (res.units.length === 1) setUnitId(res.units[0].id);
+    });
+  }, []);
+
+  // Загрузка сейфов
+  useEffect(() => {
+    apiFetch<{ safes: Safe[] }>('/api/safes').then((res) => {
+      setSafes(res.safes);
     });
   }, []);
 
@@ -138,6 +151,7 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!unitId || !categoryId || !amount || !date) return;
+    if (paymentMethod === 'cash' && !safeId) return;
 
     setSubmitting(true);
     setError(null);
@@ -155,6 +169,8 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
           description: description || undefined,
           cardNote: cardNote || undefined,
           chatId: chatId || undefined,
+          paymentMethod,
+          safeId: paymentMethod === 'cash' ? safeId : undefined,
         }),
       });
       onSuccess();
@@ -168,9 +184,49 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
   const inputClass = 'w-full border rounded-lg px-3 py-2 text-sm bg-white';
   const dropdownClass = 'absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto';
   const dropdownItemClass = 'w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0';
+  const toggleActiveClass = 'flex-1 py-2 text-sm font-medium rounded-lg transition-colors';
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Переключатель Карта / Наличные */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Способ оплаты</label>
+        <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setPaymentMethod('card')}
+            className={`${toggleActiveClass} ${paymentMethod === 'card' ? 'bg-blue-600 text-white shadow' : 'text-gray-600'}`}
+          >
+            Карта
+          </button>
+          <button
+            type="button"
+            onClick={() => setPaymentMethod('cash')}
+            className={`${toggleActiveClass} ${paymentMethod === 'cash' ? 'bg-blue-600 text-white shadow' : 'text-gray-600'}`}
+          >
+            Наличные
+          </button>
+        </div>
+      </div>
+
+      {/* Сейф (только для наличных) */}
+      {paymentMethod === 'cash' && (
+        <div>
+          <label className="block text-sm font-medium mb-1">Сейф</label>
+          <select
+            value={safeId ?? ''}
+            onChange={(e) => setSafeId(Number(e.target.value) || null)}
+            className={inputClass}
+            required
+          >
+            <option value="">Выберите сейф</option>
+            {safes.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Юнит */}
       <div>
         <label className="block text-sm font-medium mb-1">Юнит</label>
@@ -397,23 +453,25 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
         />
       </div>
 
-      {/* Карта/заметка */}
-      <div>
-        <label className="block text-sm font-medium mb-1">Карта / заметка</label>
-        <input
-          type="text"
-          value={cardNote}
-          onChange={(e) => setCardNote(e.target.value)}
-          className={inputClass}
-          placeholder="Например: Сбер *1234"
-        />
-      </div>
+      {/* Карта/заметка — только для карты */}
+      {paymentMethod === 'card' && (
+        <div>
+          <label className="block text-sm font-medium mb-1">Карта / заметка</label>
+          <input
+            type="text"
+            value={cardNote}
+            onChange={(e) => setCardNote(e.target.value)}
+            className={inputClass}
+            placeholder="Например: Сбер *1234"
+          />
+        </div>
+      )}
 
       {error && <div className="text-sm text-red-500">{error}</div>}
 
       <button
         type="submit"
-        disabled={submitting || !unitId || !categoryId || !amount}
+        disabled={submitting || !unitId || !categoryId || !amount || (paymentMethod === 'cash' && !safeId)}
         className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
       >
         {submitting ? 'Отправка...' : 'Создать платёж'}

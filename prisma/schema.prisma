@@ -149,6 +149,9 @@ model Payment {
   description                 String?
   cardNote                    String?
 
+  paymentMethod               String        @default("card") // "card" | "cash"
+  adeskSafeId                 Int?          // ID сейфа в Adesk (для наличных)
+
   status                      PaymentStatus @default(PENDING_RETRO)
 
   adeskConfirmedTransactionId Int?

@@ -158,6 +158,35 @@ export const adesk = {
       },
     ),
 
+  // ===== Создание транзакции (для наличных) =====
+  createTransaction: (data: {
+    amount: number;
+    date: string; // YYYY-MM-DD
+    type: 'outcome' | 'income';
+    bankAccountId: number;
+    categoryId?: number;
+    projectId?: number;
+    contractorId?: number;
+    description?: string;
+  }) =>
+    request<{ transaction: AdeskTransaction }>(
+      'POST',
+      '/v1/transaction',
+      {
+        format: 'form',
+        body: {
+          amount: data.amount,
+          date: data.date,
+          type: data.type === 'outcome' ? 2 : 1,
+          bank_account: data.bankAccountId,
+          ...(data.categoryId ? { category: data.categoryId } : {}),
+          ...(data.projectId ? { project: data.projectId } : {}),
+          ...(data.contractorId ? { contractor: data.contractorId } : {}),
+          ...(data.description ? { description: data.description } : {}),
+        },
+      },
+    ),
+
   // ===== Вебхуки =====
   createWebhook: (url: string, events: string[], description: string) =>
     request<{ webhook: AdeskWebhook }>(
