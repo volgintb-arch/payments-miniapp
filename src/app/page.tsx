@@ -17,6 +17,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'create' | 'list'>('create');
+  const [chatId, setChatId] = useState<string | null>(null);
 
   useEffect(() => {
     // Даём время Telegram SDK загрузиться
@@ -55,6 +56,11 @@ export default function Home() {
 
         tg.ready();
         tg.expand();
+
+        // Запоминаем chat_id группы, откуда открыт мини-апп
+        if (tg.initDataUnsafe?.chat?.id) {
+          setChatId(String(tg.initDataUnsafe.chat.id));
+        }
 
         const res = await apiFetch<{ token: string; user: UserInfo }>(
           '/api/auth/login',
@@ -128,7 +134,7 @@ export default function Home() {
       </nav>
 
       {tab === 'create' ? (
-        <PaymentForm onSuccess={() => setTab('list')} />
+        <PaymentForm onSuccess={() => setTab('list')} chatId={chatId} />
       ) : (
         <PaymentList />
       )}

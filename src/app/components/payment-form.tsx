@@ -23,7 +23,7 @@ function flattenCategories(groups: CategoryGroup[]) {
   return result;
 }
 
-export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
+export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chatId?: string | null }) {
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitId, setUnitId] = useState<number | null>(null);
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
@@ -154,6 +154,7 @@ export function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
           date,
           description: description || undefined,
           cardNote: cardNote || undefined,
+          chatId: chatId || undefined,
         }),
       });
       onSuccess();

@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body) return badRequest('Invalid JSON');
 
-  const { unitId, adeskCategoryId, adeskProjectId, adeskContractorId, amount, date, description, cardNote } = body;
+  const { unitId, adeskCategoryId, adeskProjectId, adeskContractorId, amount, date, description, cardNote, chatId } = body;
 
   if (!unitId || !adeskCategoryId || !amount || !date) {
     return badRequest('unitId, adeskCategoryId, amount, date are required');
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     cardNote || '',
   ].filter(Boolean);
 
-  sendToGroup(parts.join(' / ')).catch(() => {});
+  sendToGroup(parts.join(' / '), chatId || undefined).catch(() => {});
 
   // Запускаем ретро-матчинг асинхронно (не блокируем ответ)
   processRetroMatch(payment.id).catch((err) => {
