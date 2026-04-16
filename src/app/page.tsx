@@ -27,6 +27,25 @@ export default function Home() {
     return () => clearTimeout(timer);
 
     async function init() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tg = (window as any).Telegram?.WebApp;
+
+      // Читаем chat_id СРАЗУ, до проверки токена
+      // start_param формат: c<chatId>t<threadId> или c<chatId>
+      if (tg?.initDataUnsafe) {
+        const sp = tg.initDataUnsafe.start_param;
+        if (sp && sp.startsWith('c')) {
+          const match = sp.match(/^c(\d+)(?:t(\d+))?$/);
+          if (match) {
+            const cid = `-${match[1]}`;
+            const tid = match[2];
+            setChatId(tid ? `${cid}_${tid}` : cid);
+          }
+        } else if (tg.initDataUnsafe.chat?.id) {
+          setChatId(String(tg.initDataUnsafe.chat.id));
+        }
+      }
+
       try {
         const token = localStorage.getItem('token');
         if (token) {
@@ -46,8 +65,6 @@ export default function Home() {
           }
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const tg = (window as any).Telegram?.WebApp;
         if (!tg?.initData) {
           setError('Откройте приложение через Telegram');
           setLoading(false);
@@ -56,20 +73,6 @@ export default function Home() {
 
         tg.ready();
         tg.expand();
-
-        // Запоминаем chat_id группы, откуда открыт мини-апп
-        // start_param формат: c<chatId>t<threadId> или c<chatId>
-        const sp = tg.initDataUnsafe?.start_param;
-        if (sp && sp.startsWith('c')) {
-          const match = sp.match(/^c(\d+)(?:t(\d+))?$/);
-          if (match) {
-            const cid = `-${match[1]}`;
-            const tid = match[2];
-            setChatId(tid ? `${cid}_${tid}` : cid);
-          }
-        } else if (tg.initDataUnsafe?.chat?.id) {
-          setChatId(String(tg.initDataUnsafe.chat.id));
-        }
 
         const res = await apiFetch<{ token: string; user: UserInfo }>(
           '/api/auth/login',
