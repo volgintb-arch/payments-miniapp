@@ -58,9 +58,15 @@ export default function Home() {
         tg.expand();
 
         // Запоминаем chat_id группы, откуда открыт мини-апп
-        // Приоритет: start_param (из URL кнопки) > chat.id (из SDK)
-        if (tg.initDataUnsafe?.start_param) {
-          setChatId(tg.initDataUnsafe.start_param);
+        // start_param формат: c<chatId>t<threadId> или c<chatId>
+        const sp = tg.initDataUnsafe?.start_param;
+        if (sp && sp.startsWith('c')) {
+          const match = sp.match(/^c(\d+)(?:t(\d+))?$/);
+          if (match) {
+            const cid = `-${match[1]}`;
+            const tid = match[2];
+            setChatId(tid ? `${cid}_${tid}` : cid);
+          }
         } else if (tg.initDataUnsafe?.chat?.id) {
           setChatId(String(tg.initDataUnsafe.chat.id));
         }
