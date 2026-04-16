@@ -58,7 +58,10 @@ export default function Home() {
         tg.expand();
 
         // Запоминаем chat_id группы, откуда открыт мини-апп
-        if (tg.initDataUnsafe?.chat?.id) {
+        // Приоритет: start_param (из URL кнопки) > chat.id (из SDK)
+        if (tg.initDataUnsafe?.start_param) {
+          setChatId(tg.initDataUnsafe.start_param);
+        } else if (tg.initDataUnsafe?.chat?.id) {
           setChatId(String(tg.initDataUnsafe.chat.id));
         }
 
