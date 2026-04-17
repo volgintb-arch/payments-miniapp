@@ -177,7 +177,7 @@ export const adesk = {
         body: {
           amount: data.amount,
           date: data.date,
-          type: data.type === 'outcome' ? 2 : 1,
+          type: data.type,
           bank_account: data.bankAccountId,
           ...(data.categoryId ? { category: data.categoryId } : {}),
           ...(data.projectId ? { project: data.projectId } : {}),
