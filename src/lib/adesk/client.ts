@@ -66,6 +66,15 @@ async function request<T>(
     }
 
     const data = (await res.json()) as AdeskResponse<T>;
+    if (data.success === false) {
+      console.error(
+        `[adesk ${method} ${endpoint}] success:false`,
+        JSON.stringify({ requestBody: opts.body, response: data }),
+      );
+      throw new Error(
+        `Adesk API error: ${data.message || data.errorCode || JSON.stringify(data)}`,
+      );
+    }
     return data;
   }
 
@@ -141,7 +150,7 @@ export const adesk = {
       category: { id: number; name: string } | null;
     }> }>('GET', '/v1/projects'),
 
-  updateTransaction: (id: number, updates: {
+  updateTransaction: async (id: number, updates: {
     categoryId?: number;
     contractorId?: number;
     projectId?: number;
@@ -169,7 +178,8 @@ export const adesk = {
         ...(p.description ? { description: p.description } : {}),
       }));
     }
-    return request<{ transactions: AdeskTransaction[] }>(
+    console.log(`[adesk updateTransaction] id=${id} body:`, JSON.stringify(body));
+    const res = await request<{ transactions: AdeskTransaction[] }>(
       'POST',
       '/v2/transactions/update',
       {
@@ -177,6 +187,8 @@ export const adesk = {
         body: { transactions: [body] },
       },
     );
+    console.log(`[adesk updateTransaction] id=${id} response:`, JSON.stringify(res));
+    return res;
   },
 
   // ===== Создание транзакции (для наличных) =====
