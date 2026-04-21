@@ -32,8 +32,16 @@ export async function findMatchingTransaction(
 
   if (!payment) throw new Error(`Payment ${paymentId} not found`);
 
-  // Собираем bank-accounts всех затронутых юнитов (юнит платежа + юниты сплитов)
-  const unitIds = new Set<number>([payment.unitId]);
+  // Ищем по всем bank-accounts юнитов, к которым у пользователя-автора есть доступ.
+  // Причина: карта может физически принадлежать другому юнит-юрлицу, чем
+  // бухгалтерский юнит расхода. Если по сумме+дате единственный кандидат —
+  // matched; если несколько — needs_review.
+  const userUnits = await prisma.userUnit.findMany({
+    where: { userId: payment.userId },
+    select: { unitId: true },
+  });
+  const unitIds = new Set<number>(userUnits.map((u) => u.unitId));
+  unitIds.add(payment.unitId);
   for (const s of payment.splits) unitIds.add(s.unitId);
 
   const bankAccounts = await prisma.unitBankAccount.findMany({
