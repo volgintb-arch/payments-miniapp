@@ -164,9 +164,18 @@ export const adesk = {
     }>;
   }) => {
     const body: Record<string, unknown> = { id };
-    if (updates.categoryId !== undefined) body.category = updates.categoryId;
-    if (updates.contractorId !== undefined) body.contractor = updates.contractorId;
-    if (updates.projectId !== undefined) body.project = updates.projectId;
+    if (updates.categoryId !== undefined) {
+      body.category = updates.categoryId;
+      body.categoryId = updates.categoryId;
+    }
+    if (updates.contractorId !== undefined) {
+      body.contractor = updates.contractorId;
+      body.contractorId = updates.contractorId;
+    }
+    if (updates.projectId !== undefined) {
+      body.project = updates.projectId;
+      body.projectId = updates.projectId;
+    }
     if (updates.description !== undefined) body.description = updates.description;
     if (updates.parts && updates.parts.length > 0) {
       body.isSplitted = true;
