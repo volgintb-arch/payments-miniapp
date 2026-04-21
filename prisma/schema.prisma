@@ -164,10 +164,33 @@ model Payment {
 
   user                        User          @relation(fields: [userId], references: [id])
   unit                        Unit          @relation(fields: [unitId], references: [id])
+  splits                      PaymentSplit[]
 
   @@index([status])
   @@index([status, createdAt])
   @@index([unitId, amount, date])
+}
+
+// Разбивка платежа на несколько частей с разными юнит/проект/статья/контрагент.
+// Если у платежа нет сплитов — используются поля самого Payment (совместимость).
+// Если сплиты есть — sum(splits.amount) должен равняться Payment.amount,
+// и в Adesk уходит parts[] c isSplitted=true.
+model PaymentSplit {
+  id                     String   @id @default(cuid())
+  paymentId              String
+  unitId                 Int
+  adeskCategoryId        Int
+  adeskProjectId         Int?
+  adeskContractorId      Int?
+  contractorNameSnapshot String?
+  projectNameSnapshot    String?
+  amount                 Decimal  @db.Decimal(15, 2)
+  description            String?
+  sortOrder              Int      @default(0)
+
+  payment                Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
 }
 
 model MatchConflict {

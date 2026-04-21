@@ -146,17 +146,38 @@ export const adesk = {
     contractorId?: number;
     projectId?: number;
     description?: string;
-  }) =>
-    request<{ transactions: AdeskTransaction[] }>(
+    parts?: Array<{
+      amount: number;
+      categoryId: number;
+      projectId?: number;
+      contractorId?: number;
+      description?: string;
+    }>;
+  }) => {
+    const body: Record<string, unknown> = { id };
+    if (updates.categoryId !== undefined) body.category = updates.categoryId;
+    if (updates.contractorId !== undefined) body.contractor = updates.contractorId;
+    if (updates.projectId !== undefined) body.project = updates.projectId;
+    if (updates.description !== undefined) body.description = updates.description;
+    if (updates.parts && updates.parts.length > 0) {
+      body.isSplitted = true;
+      body.parts = updates.parts.map((p) => ({
+        amount: p.amount,
+        category: p.categoryId,
+        ...(p.projectId ? { project: p.projectId } : {}),
+        ...(p.contractorId ? { contractor: p.contractorId } : {}),
+        ...(p.description ? { description: p.description } : {}),
+      }));
+    }
+    return request<{ transactions: AdeskTransaction[] }>(
       'POST',
       '/v2/transactions/update',
       {
         format: 'json',
-        body: {
-          transactions: [{ id, ...updates }],
-        },
+        body: { transactions: [body] },
       },
-    ),
+    );
+  },
 
   // ===== Создание транзакции (для наличных) =====
   createTransaction: (data: {
@@ -168,8 +189,42 @@ export const adesk = {
     projectId?: number;
     contractorId?: number;
     description?: string;
-  }) =>
-    request<{ transaction: AdeskTransaction }>(
+    parts?: Array<{
+      amount: number;
+      categoryId: number;
+      projectId?: number;
+      contractorId?: number;
+      description?: string;
+    }>;
+  }) => {
+    // При наличии parts переключаемся на v2 с isSplitted
+    if (data.parts && data.parts.length > 0) {
+      return request<{ transactions: AdeskTransaction[] }>(
+        'POST',
+        '/v2/transactions/create',
+        {
+          format: 'json',
+          body: {
+            transactions: [{
+              amount: data.amount,
+              date: data.date,
+              type: data.type,
+              bankAccount: data.bankAccountId,
+              isSplitted: true,
+              ...(data.description ? { description: data.description } : {}),
+              parts: data.parts.map((p) => ({
+                amount: p.amount,
+                category: p.categoryId,
+                ...(p.projectId ? { project: p.projectId } : {}),
+                ...(p.contractorId ? { contractor: p.contractorId } : {}),
+                ...(p.description ? { description: p.description } : {}),
+              })),
+            }],
+          },
+        },
+      );
+    }
+    return request<{ transaction: AdeskTransaction }>(
       'POST',
       '/v1/transaction',
       {
@@ -185,7 +240,8 @@ export const adesk = {
           ...(data.description ? { description: data.description } : {}),
         },
       },
-    ),
+    );
+  },
 
   // ===== Вебхуки =====
   createWebhook: (url: string, events: string[], description: string) =>
