@@ -164,26 +164,17 @@ export const adesk = {
     }>;
   }) => {
     const body: Record<string, unknown> = { id };
-    if (updates.categoryId !== undefined) {
-      body.category = updates.categoryId;
-      body.categoryId = updates.categoryId;
-    }
-    if (updates.contractorId !== undefined) {
-      body.contractor = updates.contractorId;
-      body.contractorId = updates.contractorId;
-    }
-    if (updates.projectId !== undefined) {
-      body.project = updates.projectId;
-      body.projectId = updates.projectId;
-    }
+    if (updates.categoryId !== undefined) body.categoryId = updates.categoryId;
+    if (updates.contractorId !== undefined) body.contractorId = updates.contractorId;
+    if (updates.projectId !== undefined) body.projectId = updates.projectId;
     if (updates.description !== undefined) body.description = updates.description;
     if (updates.parts && updates.parts.length > 0) {
       body.isSplitted = true;
       body.parts = updates.parts.map((p) => ({
         amount: p.amount,
-        category: p.categoryId,
-        ...(p.projectId ? { project: p.projectId } : {}),
-        ...(p.contractorId ? { contractor: p.contractorId } : {}),
+        categoryId: p.categoryId,
+        ...(p.projectId ? { projectId: p.projectId } : {}),
+        ...(p.contractorId ? { contractorId: p.contractorId } : {}),
         ...(p.description ? { description: p.description } : {}),
       }));
     }
@@ -235,9 +226,9 @@ export const adesk = {
               ...(data.description ? { description: data.description } : {}),
               parts: data.parts.map((p) => ({
                 amount: p.amount,
-                category: p.categoryId,
-                ...(p.projectId ? { project: p.projectId } : {}),
-                ...(p.contractorId ? { contractor: p.contractorId } : {}),
+                categoryId: p.categoryId,
+                ...(p.projectId ? { projectId: p.projectId } : {}),
+                ...(p.contractorId ? { contractorId: p.contractorId } : {}),
                 ...(p.description ? { description: p.description } : {}),
               })),
             }],
