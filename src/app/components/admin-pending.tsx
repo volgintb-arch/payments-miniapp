@@ -138,20 +138,20 @@ export function AdminPending() {
         </button>
       </div>
       {payments.map((p) => (
-        <div key={p.id} className="border rounded-lg p-3 bg-white">
-          <div className="flex justify-between items-start mb-2">
-            <div>
-              <div className="font-semibold">
+        <div key={p.id} className="border rounded-lg p-3 bg-white overflow-hidden">
+          <div className="flex justify-between items-start gap-2 mb-2">
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold break-words">
                 {p.amount.toLocaleString('ru-RU')} ₽ · {p.unitName}
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 break-words">
                 {p.date} · {p.userName} · карта: {p.cardNote || '—'}
               </div>
               {p.description && (
-                <div className="text-xs text-gray-700 mt-1">«{p.description}»</div>
+                <div className="text-xs text-gray-700 mt-1 break-words">«{p.description}»</div>
               )}
             </div>
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <span className={`text-[10px] px-2 py-0.5 rounded ${
                 p.status === 'ORPHANED'
                   ? 'bg-red-100 text-red-700'
@@ -188,10 +188,10 @@ export function AdminPending() {
                       checked={!!isSelected}
                       disabled={isTaken}
                       onChange={() => toggleCandidate(p.id, c.txId)}
-                      className="mt-0.5"
+                      className="mt-0.5 shrink-0"
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <span className="font-medium">
                           {c.amount.toLocaleString('ru-RU')} ₽
                         </span>
@@ -207,7 +207,7 @@ export function AdminPending() {
                           </span>
                         )}
                       </div>
-                      <div className="text-gray-600 truncate">
+                      <div className="text-gray-600 break-all line-clamp-2">
                         {c.description || '—'}
                       </div>
                     </div>
