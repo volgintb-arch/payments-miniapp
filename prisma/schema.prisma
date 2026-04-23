@@ -45,6 +45,7 @@ model User {
 
   allowedUnits     UserUnit[]
   payments         Payment[]
+  incomes          CashIncome[]
 }
 
 model UserUnit {
@@ -206,6 +207,33 @@ model MatchConflict {
   resolvedAt                DateTime?
 
   @@index([resolvedAt])
+}
+
+// ========================================
+// ПРИХОДЫ НАЛИЧНЫХ
+// ========================================
+
+model CashIncome {
+  id                     String    @id
+  userId                 String
+  adeskCategoryId        Int
+  adeskProjectId         Int?
+  adeskContractorId      Int?
+  projectNameSnapshot    String?
+  contractorNameSnapshot String?
+  amount                 Decimal   @db.Decimal(15, 2)
+  date                   DateTime  @db.Date
+  description            String?
+  adeskSafeId            Int
+  adeskTransactionId     Int?
+  status                 String    @default("PENDING") // MATCHED | PENDING | FAILED
+  createdAt              DateTime  @default(now())
+  matchedAt              DateTime?
+
+  user                   User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
 }
 
 model AdeskApiLog {

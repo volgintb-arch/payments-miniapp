@@ -5,6 +5,7 @@ import { apiFetch, setToken } from '@/lib/hooks/use-api';
 import { PaymentForm } from './components/payment-form';
 import { PaymentList } from './components/payment-list';
 import { AdminPending } from './components/admin-pending';
+import { IncomeForm } from './components/income-form';
 
 type UserInfo = {
   id: string;
@@ -17,7 +18,7 @@ export default function Home() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'create' | 'list' | 'admin'>('create');
+  const [tab, setTab] = useState<'create' | 'income' | 'list' | 'admin'>('create');
   const [chatId, setChatId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -123,7 +124,7 @@ export default function Home() {
         </p>
       </header>
 
-      <nav className="flex gap-2 mb-6">
+      <nav className="flex gap-2 mb-6 flex-wrap">
         <button
           onClick={() => setTab('create')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -132,7 +133,17 @@ export default function Home() {
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
           }`}
         >
-          Новый платёж
+          Расход
+        </button>
+        <button
+          onClick={() => setTab('income')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'income'
+              ? 'bg-green-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Приход
         </button>
         <button
           onClick={() => setTab('list')}
@@ -160,6 +171,9 @@ export default function Home() {
 
       {tab === 'create' && (
         <PaymentForm onSuccess={() => setTab('list')} chatId={chatId} />
+      )}
+      {tab === 'income' && (
+        <IncomeForm onSuccess={() => setTab('list')} chatId={chatId} />
       )}
       {tab === 'list' && <PaymentList />}
       {tab === 'admin' && user.role === 'ADMIN' && <AdminPending />}

@@ -1,4 +1,5 @@
-// GET /api/categories?unitId=1 — категории для юнита (из кэша)
+// GET /api/categories?unitId=1          — статьи расходов юнита (из кэша)
+// GET /api/categories?direction=income  — все статьи доходов (type=1)
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
@@ -8,10 +9,27 @@ export async function GET(request: NextRequest) {
   const auth = requireAuth(request);
   if (auth instanceof Response) return auth;
 
-  const unitId = request.nextUrl.searchParams.get('unitId');
-  if (!unitId) return badRequest('unitId is required');
+  const direction = request.nextUrl.searchParams.get('direction');
 
-  // Получаем группы статей юнита
+  if (direction === 'income') {
+    const categories = await prisma.categoryCache.findMany({
+      where: { type: 1, isArchived: false },
+      orderBy: { name: 'asc' },
+    });
+    return Response.json({
+      groups: [
+        {
+          groupId: 0,
+          groupName: 'Доходы',
+          categories: categories.map((c) => ({ id: c.adeskId, name: c.name })),
+        },
+      ],
+    });
+  }
+
+  const unitId = request.nextUrl.searchParams.get('unitId');
+  if (!unitId) return badRequest('unitId or direction=income is required');
+
   const unitGroups = await prisma.unitGroup.findMany({
     where: { unitId: Number(unitId) },
     orderBy: { sortOrder: 'asc' },
@@ -19,7 +37,6 @@ export async function GET(request: NextRequest) {
 
   const groupIds = unitGroups.map((g) => g.adeskGroupId);
 
-  // Категории из кэша по группам юнита
   const categories = await prisma.categoryCache.findMany({
     where: {
       adeskGroupId: { in: groupIds },
@@ -28,7 +45,6 @@ export async function GET(request: NextRequest) {
     orderBy: { name: 'asc' },
   });
 
-  // Группируем по adeskGroupId
   const grouped = unitGroups.map((g) => ({
     groupId: g.adeskGroupId,
     groupName: g.adeskGroupName,
