@@ -28,9 +28,23 @@ type PendingPayment = {
   candidates: Candidate[];
 };
 
+type PendingIncome = {
+  id: string;
+  amount: number;
+  date: string;
+  description: string | null;
+  categoryName: string;
+  projectName: string;
+  contractorName: string;
+  userName: string;
+  status: 'PENDING' | 'FAILED';
+  createdAt: string;
+};
+
 export function AdminPending() {
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState<PendingPayment[]>([]);
+  const [incomes, setIncomes] = useState<PendingIncome[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, Set<number>>>({});
@@ -39,8 +53,9 @@ export function AdminPending() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch<{ payments: PendingPayment[] }>('/api/admin/pending');
+      const res = await apiFetch<{ payments: PendingPayment[]; incomes?: PendingIncome[] }>('/api/admin/pending');
       setPayments(res.payments);
+      setIncomes(res.incomes || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
     } finally {
@@ -109,10 +124,35 @@ export function AdminPending() {
     }
   };
 
+  const retryIncome = async (incomeId: string) => {
+    setBusyId(incomeId);
+    try {
+      await apiFetch(`/api/admin/incomes/${incomeId}`, { method: 'POST' });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const deleteIncome = async (incomeId: string) => {
+    if (!confirm('Удалить приход? Это действие необратимо.')) return;
+    setBusyId(incomeId);
+    try {
+      await apiFetch(`/api/admin/incomes/${incomeId}`, { method: 'DELETE' });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   if (loading) return <div className="text-sm text-gray-500 py-8 text-center">Загрузка...</div>;
   if (error) return <div className="text-sm text-red-500 py-8 text-center">{error}</div>;
 
-  if (payments.length === 0) {
+  if (payments.length === 0 && incomes.length === 0) {
     return (
       <div className="text-center py-8">
         <div className="text-sm text-gray-500 mb-3">Висящих платежей нет 🎉</div>
@@ -129,7 +169,10 @@ export function AdminPending() {
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center mb-2">
-        <div className="text-sm text-gray-600">Висящих: {payments.length}</div>
+        <div className="text-sm text-gray-600">
+          Висящих: {payments.length}
+          {incomes.length > 0 && ` + приходов: ${incomes.length}`}
+        </div>
         <button
           onClick={rerunCron}
           className="text-xs px-3 py-1 bg-gray-100 rounded"
@@ -137,6 +180,52 @@ export function AdminPending() {
           Запустить матчер
         </button>
       </div>
+
+      {incomes.length > 0 && (
+        <div className="space-y-2 mb-4">
+          <div className="text-xs font-medium text-green-700">⬆️ Приходы (не ушли в Adesk)</div>
+          {incomes.map((i) => (
+            <div key={i.id} className="border border-green-200 rounded-lg p-3 bg-green-50 overflow-hidden">
+              <div className="flex justify-between items-start gap-2 mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold break-words">
+                    {i.amount.toLocaleString('ru-RU')} ₽ · {i.categoryName}
+                  </div>
+                  <div className="text-xs text-gray-500 break-words">
+                    {i.date} · {i.userName}
+                    {i.projectName && ` · ${i.projectName}`}
+                    {i.contractorName && ` · ${i.contractorName}`}
+                  </div>
+                  {i.description && (
+                    <div className="text-xs text-gray-700 mt-1 break-words">«{i.description}»</div>
+                  )}
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${
+                  i.status === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {i.status}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => retryIncome(i.id)}
+                  disabled={busyId === i.id}
+                  className="flex-1 px-3 py-1.5 bg-green-600 text-white text-xs rounded disabled:opacity-50"
+                >
+                  Повторить в Adesk
+                </button>
+                <button
+                  onClick={() => deleteIncome(i.id)}
+                  disabled={busyId === i.id}
+                  className="px-3 py-1.5 bg-red-100 text-red-700 text-xs rounded disabled:opacity-50"
+                >
+                  Удалить
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {payments.map((p) => (
         <div key={p.id} className="border rounded-lg p-3 bg-white overflow-hidden">
           <div className="flex justify-between items-start gap-2 mb-2">

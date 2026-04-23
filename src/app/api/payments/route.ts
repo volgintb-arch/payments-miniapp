@@ -211,7 +211,14 @@ export async function POST(request: NextRequest) {
 
   let tgText: string;
   if (hasSplits) {
-    const header = `${unit?.name ?? 'Юнит'} / ${Number(amount).toLocaleString('ru-RU')} ₽ / ${isCash ? 'НАЛ' : (cardNote || 'Карта')} / Разделён на ${splits.length}`;
+    const headerParts = [
+      unit?.name ?? 'Юнит',
+      `${Number(amount).toLocaleString('ru-RU')} ₽`,
+      isCash ? 'НАЛ' : (cardNote || 'Карта'),
+      `Разделён на ${splits.length}`,
+      description || '',
+    ].filter(Boolean);
+    const header = headerParts.join(' / ');
     const lines = await Promise.all(
       splitsWithSnapshots.map(async (s) => {
         const u = await prisma.unit.findUnique({ where: { id: s.unitId } });
@@ -221,6 +228,7 @@ export async function POST(request: NextRequest) {
           c?.name ?? 'Статья',
           s.projectNameSnapshot || '',
           `${s.amount.toLocaleString('ru-RU')} ₽`,
+          s.description || '',
         ].filter(Boolean).join(' / ');
         return `  • ${row}`;
       }),
@@ -233,6 +241,7 @@ export async function POST(request: NextRequest) {
       projectNameSnapshot || '',
       `${Number(amount).toLocaleString('ru-RU')} ₽`,
       isCash ? 'НАЛ' : (cardNote || ''),
+      description || '',
     ].filter(Boolean);
     tgText = parts.join(' / ');
   }

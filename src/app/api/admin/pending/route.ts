@@ -131,7 +131,34 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  return Response.json({ payments: out });
+  // Приходы: все, что не в MATCHED — висящие (FAILED, PENDING)
+  const failedIncomes = await prisma.cashIncome.findMany({
+    where: { status: { in: ['FAILED', 'PENDING'] } },
+    include: { user: { select: { firstName: true, lastName: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const incomesOut = await Promise.all(
+    failedIncomes.map(async (i) => {
+      const category = await prisma.categoryCache.findUnique({
+        where: { adeskId: i.adeskCategoryId },
+      });
+      return {
+        id: i.id,
+        amount: Number(i.amount),
+        date: i.date.toISOString().split('T')[0],
+        description: i.description,
+        categoryName: category?.name || '—',
+        projectName: i.projectNameSnapshot || '',
+        contractorName: i.contractorNameSnapshot || '',
+        userName: `${i.user.firstName} ${i.user.lastName ?? ''}`.trim(),
+        status: i.status,
+        createdAt: i.createdAt,
+      };
+    }),
+  );
+
+  return Response.json({ payments: out, incomes: incomesOut });
 }
 
 function isAuthorized(request: NextRequest): boolean {
