@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
 import { adesk } from '@/lib/adesk/client';
+import { editGroupMessage } from '@/lib/telegram';
 
 export async function PATCH(
   request: NextRequest,
@@ -105,7 +106,37 @@ export async function PATCH(
       description: nextDescription,
       cardNote: nextCardNote,
     },
+    include: {
+      unit: true,
+      user: { select: { telegramUsername: true, firstName: true, lastName: true } },
+    },
   });
+
+  // Редактируем сообщение в Telegram (если id сохранён)
+  if (updated.tgChatId && updated.tgMessageId) {
+    try {
+      const category = await prisma.categoryCache.findUnique({
+        where: { adeskId: nextCategoryId },
+      });
+      const isCash = updated.paymentMethod === 'cash';
+      const tag = updated.user.telegramUsername
+        ? `@${updated.user.telegramUsername}`
+        : `${updated.user.firstName} ${updated.user.lastName ?? ''}`.trim();
+      const parts = [
+        updated.unit.name,
+        category?.name ?? 'Статья',
+        projectNameSnapshot || '',
+        `${Number(updated.amount).toLocaleString('ru-RU')} ₽`,
+        isCash ? 'НАЛ' : (nextCardNote || ''),
+        nextDescription || '',
+        tag,
+      ].filter(Boolean);
+      const tgText = parts.join(' / ') + '\n(отредактировано)';
+      await editGroupMessage(updated.tgChatId, updated.tgMessageId, tgText);
+    } catch (err) {
+      console.error('[payment edit] telegram edit failed:', err);
+    }
+  }
 
   return Response.json({ payment: { ...updated, amount: Number(updated.amount) } });
 }

@@ -14,6 +14,12 @@ import { processRetroMatch } from '@/lib/retro-match';
 import { sendToGroup } from '@/lib/telegram';
 import { adesk } from '@/lib/adesk/client';
 
+function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
+  if (u.telegramUsername) return `@${u.telegramUsername}`;
+  const name = `${u.firstName} ${u.lastName ?? ''}`.trim();
+  return name || 'Без имени';
+}
+
 type SplitInput = {
   unitId: number;
   adeskCategoryId: number;
@@ -55,7 +61,7 @@ export async function GET(request: NextRequest) {
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        user: { select: { firstName: true, lastName: true } },
+        user: { select: { firstName: true, lastName: true, telegramUsername: true } },
         unit: { select: { name: true } },
         splits: true,
       },
@@ -213,6 +219,11 @@ export async function POST(request: NextRequest) {
   // Telegram-уведомление
   const unit = await prisma.unit.findUnique({ where: { id: paymentUnitId } });
   const category = await prisma.categoryCache.findUnique({ where: { adeskId: primaryCategoryId } });
+  const author = await prisma.user.findUnique({
+    where: { id: auth.userId },
+    select: { telegramUsername: true, firstName: true, lastName: true },
+  });
+  const tag = author ? authorTag(author) : '';
 
   let tgText: string;
   if (hasSplits) {
@@ -222,6 +233,7 @@ export async function POST(request: NextRequest) {
       isCash ? 'НАЛ' : (cardNote || 'Карта'),
       `Разделён на ${splits.length}`,
       description || '',
+      tag,
     ].filter(Boolean);
     const header = headerParts.join(' / ');
     const lines = await Promise.all(
@@ -247,11 +259,23 @@ export async function POST(request: NextRequest) {
       `${Number(amount).toLocaleString('ru-RU')} ₽`,
       isCash ? 'НАЛ' : (cardNote || ''),
       description || '',
+      tag,
     ].filter(Boolean);
     tgText = parts.join(' / ');
   }
 
-  sendToGroup(tgText, chatId || undefined).catch(() => {});
+  sendToGroup(tgText, chatId || undefined).then((sent) => {
+    if (sent) {
+      prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          tgChatId: sent.chatId,
+          tgMessageId: sent.messageId,
+          tgThreadId: sent.threadId ?? null,
+        },
+      }).catch((err) => console.error('[payments] save tg msg id failed:', err));
+    }
+  }).catch(() => {});
 
   if (isCash) {
     // Наличные — создаём транзакцию в Adesk сразу (await).

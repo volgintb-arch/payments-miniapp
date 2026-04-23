@@ -105,6 +105,15 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
     });
   }, []);
 
+  // При открытии формы — фоновая синхронизация проектов из Adesk.
+  // Заставляет проект, созданный только что в Adesk, появиться в списке максимум через минуту.
+  const [projectsVersion, setProjectsVersion] = useState(0);
+  useEffect(() => {
+    apiFetch('/api/sync-projects', { method: 'POST' })
+      .then(() => setProjectsVersion((v) => v + 1))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!unitId) {
       setGroups([]);
@@ -136,7 +145,7 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
       );
     }, projectQuery.length >= 2 ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [unitId, projectQuery]);
+  }, [unitId, projectQuery, projectsVersion]);
 
   useEffect(() => {
     if (contractorQuery.length < 2) {

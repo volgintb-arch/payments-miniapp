@@ -19,7 +19,7 @@ type Payment = {
   contractorNameSnapshot: string | null;
   projectNameSnapshot: string | null;
   createdAt: string;
-  user: { firstName: string; lastName: string | null };
+  user: { firstName: string; lastName: string | null; telegramUsername: string | null };
   unit: { name: string };
   splits: Array<{ id: string }>;
 };
@@ -33,8 +33,13 @@ type Income = {
   projectNameSnapshot: string | null;
   contractorNameSnapshot: string | null;
   createdAt: string;
-  user: { firstName: string; lastName: string | null };
+  user: { firstName: string; lastName: string | null; telegramUsername: string | null };
 };
+
+function authorTag(u: { firstName: string; lastName: string | null; telegramUsername: string | null }) {
+  if (u.telegramUsername) return `@${u.telegramUsername}`;
+  return `${u.firstName} ${u.lastName ?? ''}`.trim();
+}
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   PENDING_RETRO: { label: 'Поиск', color: 'bg-yellow-100 text-yellow-800' },
@@ -100,7 +105,7 @@ export function PaymentList() {
                   </span>
                 </div>
                 <div className="text-xs text-gray-500 space-y-0.5 break-words">
-                  <div>{new Date(i.date).toLocaleDateString('ru-RU')}</div>
+                  <div>{new Date(i.date).toLocaleDateString('ru-RU')} · {authorTag(i.user)}</div>
                   {i.description && <div>{i.description}</div>}
                   {i.projectNameSnapshot && <div>Проект: {i.projectNameSnapshot}</div>}
                   {i.contractorNameSnapshot && <div>Контрагент: {i.contractorNameSnapshot}</div>}
@@ -126,7 +131,7 @@ export function PaymentList() {
               </span>
             </div>
             <div className="text-xs text-gray-500 space-y-0.5 break-words">
-              <div>{p.unit.name} · {new Date(p.date).toLocaleDateString('ru-RU')}</div>
+              <div>{p.unit.name} · {new Date(p.date).toLocaleDateString('ru-RU')} · {authorTag(p.user)}</div>
               {p.description && <div>{p.description}</div>}
               {p.projectNameSnapshot && <div>Проект: {p.projectNameSnapshot}</div>}
               {p.contractorNameSnapshot && <div>Контрагент: {p.contractorNameSnapshot}</div>}

@@ -160,6 +160,10 @@ model Payment {
   retroAttempts               Int           @default(0)
   lastRetroAttemptAt          DateTime?
 
+  tgChatId                    String?
+  tgMessageId                 Int?
+  tgThreadId                  Int?
+
   createdAt                   DateTime      @default(now())
   matchedAt                   DateTime?
 

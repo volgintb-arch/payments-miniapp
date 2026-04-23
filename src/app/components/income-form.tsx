@@ -72,6 +72,13 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
     );
   }, []);
 
+  const [projectsVersion, setProjectsVersion] = useState(0);
+  useEffect(() => {
+    apiFetch('/api/sync-projects', { method: 'POST' })
+      .then(() => setProjectsVersion((v) => v + 1))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       const params = new URLSearchParams();
@@ -81,7 +88,7 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
       );
     }, projectQuery.length >= 2 ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [projectQuery]);
+  }, [projectQuery, projectsVersion]);
 
   useEffect(() => {
     if (contractorQuery.length < 2) {

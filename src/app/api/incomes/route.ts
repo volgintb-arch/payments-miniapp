@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
-      include: { user: { select: { firstName: true, lastName: true } } },
+      include: { user: { select: { firstName: true, lastName: true, telegramUsername: true } } },
     }),
     prisma.cashIncome.count({ where }),
   ]);
@@ -84,12 +84,20 @@ export async function POST(request: NextRequest) {
   });
 
   const category = await prisma.categoryCache.findUnique({ where: { adeskId: Number(adeskCategoryId) } });
+  const author = await prisma.user.findUnique({
+    where: { id: auth.userId },
+    select: { telegramUsername: true, firstName: true, lastName: true },
+  });
+  const tag = author
+    ? (author.telegramUsername ? `@${author.telegramUsername}` : `${author.firstName} ${author.lastName ?? ''}`.trim())
+    : '';
   const tgText = [
     '⬆️ ПРИХОД',
     category?.name ?? 'Доход',
     projectNameSnapshot || '',
     `${Number(amount).toLocaleString('ru-RU')} ₽`,
     description || '',
+    tag,
   ].filter(Boolean).join(' / ');
 
   sendToGroup(tgText, chatId || undefined).catch(() => {});
