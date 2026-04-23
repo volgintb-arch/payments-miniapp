@@ -124,10 +124,10 @@ export default function Home() {
         </p>
       </header>
 
-      <nav className="flex gap-2 mb-6 flex-wrap">
+      <nav className={`grid gap-1.5 mb-6 ${user.role === 'ADMIN' ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <button
           onClick={() => setTab('create')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          className={`py-2 rounded-lg text-xs font-medium transition-colors ${
             tab === 'create'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -137,7 +137,7 @@ export default function Home() {
         </button>
         <button
           onClick={() => setTab('income')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          className={`py-2 rounded-lg text-xs font-medium transition-colors ${
             tab === 'income'
               ? 'bg-green-600 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -147,18 +147,18 @@ export default function Home() {
         </button>
         <button
           onClick={() => setTab('list')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          className={`py-2 rounded-lg text-xs font-medium transition-colors ${
             tab === 'list'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
           }`}
         >
-          Мои платежи
+          История
         </button>
         {user.role === 'ADMIN' && (
           <button
             onClick={() => setTab('admin')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`py-2 rounded-lg text-xs font-medium transition-colors ${
               tab === 'admin'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
