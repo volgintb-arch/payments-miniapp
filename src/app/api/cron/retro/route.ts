@@ -7,8 +7,10 @@
 import { prisma } from '@/lib/db';
 import { processRetroMatch } from '@/lib/retro-match';
 import { adesk } from '@/lib/adesk/client';
+import { sendToGroup } from '@/lib/telegram';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
+const STALE_NOTIFY_HOURS = 24;
 
 export async function GET(request: Request) {
   if (CRON_SECRET) {
@@ -81,6 +83,35 @@ export async function GET(request: Request) {
     } catch (err) {
       console.error(`Cron failed for ${payment.id}:`, err);
       results.push({ paymentId: payment.id, method: payment.paymentMethod, result: 'error' });
+    }
+  }
+
+  // Уведомление в Telegram о «зависших» >24 часов платежах (дайджест раз в день).
+  // Шлём только если этот запуск — первый после полуночи (чтобы не спамить
+  // каждый час). Маркер — поле lastStaleNotifyAt на одном из этих платежей
+  // не пригодится, поэтому просто шлём при час = 7 (утренний запуск крона).
+  const hour = new Date().getHours();
+  if (hour === 7) {
+    const cutoff = new Date(Date.now() - STALE_NOTIFY_HOURS * 3600 * 1000);
+    const stale = await prisma.payment.findMany({
+      where: {
+        status: 'PENDING_RETRO',
+        createdAt: { lt: cutoff },
+      },
+      include: { unit: { select: { name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (stale.length > 0) {
+      const lines = stale.map((p) =>
+        `• ${p.unit.name} / ${Number(p.amount).toLocaleString('ru-RU')} ₽ / ${p.date.toISOString().split('T')[0]} / ${p.cardNote || '—'}`,
+      );
+      const text = [
+        `⚠️ ${stale.length} платеж${stale.length === 1 ? '' : 'а'} висит >24ч без матча в Adesk:`,
+        ...lines,
+        '',
+        'Открой мини-аппу → вкладка «Проблемы» чтобы разобраться.',
+      ].join('\n');
+      sendToGroup(text).catch(() => {});
     }
   }
 

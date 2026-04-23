@@ -1,12 +1,13 @@
 // POST /api/admin/manual-match/:paymentId
-// Body: { transactionId: number }
-// Ручная привязка платежа к конкретной Adesk-операции, когда авто-матч
-// не сработал (расхождение копеек, банк слил операции, и т.п.).
-// Доступ — по Bearer CRON_SECRET.
+// Body: { transactionId?: number, transactionIds?: number[] }
+// Ручная привязка платежа к одной (или нескольким — если банк разделил чек)
+// Adesk-операциям, когда авто-матч не сработал.
+// Доступ: Bearer CRON_SECRET или JWT с ролью ADMIN.
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
+import { getAuthUser } from '@/lib/api-helpers';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
@@ -14,18 +15,24 @@ export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  if (CRON_SECRET) {
-    const auth = request.headers.get('authorization');
-    if (auth !== `Bearer ${CRON_SECRET}`) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  if (!isAuthorized(request)) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { id } = await ctx.params;
   const body = await request.json().catch(() => null);
-  const transactionId = Number(body?.transactionId);
-  if (!transactionId) {
-    return Response.json({ error: 'transactionId is required' }, { status: 400 });
+
+  const txIds: number[] = Array.isArray(body?.transactionIds)
+    ? body.transactionIds.map((n: unknown) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
+    : body?.transactionId
+      ? [Number(body.transactionId)]
+      : [];
+
+  if (txIds.length === 0) {
+    return Response.json(
+      { error: 'transactionId or transactionIds[] is required' },
+      { status: 400 },
+    );
   }
 
   const payment = await prisma.payment.findUnique({
@@ -34,13 +41,16 @@ export async function POST(
   });
   if (!payment) return Response.json({ error: 'Payment not found' }, { status: 404 });
 
-  const taken = await prisma.payment.findFirst({
-    where: { adeskConfirmedTransactionId: transactionId, id: { not: id } },
-    select: { id: true },
+  const takenByOthers = await prisma.payment.findMany({
+    where: { adeskConfirmedTransactionId: { in: txIds }, id: { not: id } },
+    select: { id: true, adeskConfirmedTransactionId: true },
   });
-  if (taken) {
+  if (takenByOthers.length > 0) {
     return Response.json(
-      { error: `Transaction ${transactionId} already bound to payment ${taken.id}` },
+      {
+        error: 'Some transactions already bound to other payments',
+        conflicts: takenByOthers,
+      },
       { status: 409 },
     );
   }
@@ -61,13 +71,15 @@ export async function POST(
   }
   if (payment.description) updates.description = payment.description;
 
-  await adesk.updateTransaction(transactionId, updates);
+  for (const txId of txIds) {
+    await adesk.updateTransaction(txId, updates);
+  }
 
   await prisma.payment.update({
     where: { id },
     data: {
       status: 'MATCHED',
-      adeskConfirmedTransactionId: transactionId,
+      adeskConfirmedTransactionId: txIds[0],
       matchedAt: new Date(),
       retroAttempts: { increment: 1 },
       lastRetroAttemptAt: new Date(),
@@ -77,8 +89,15 @@ export async function POST(
   return Response.json({
     ok: true,
     paymentId: id,
-    transactionId,
+    transactionIds: txIds,
     amount: Number(payment.amount),
     splits: payment.splits.length,
   });
+}
+
+function isAuthorized(request: NextRequest): boolean {
+  const auth = request.headers.get('authorization');
+  if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
+  const user = getAuthUser(request);
+  return user?.role === 'ADMIN';
 }

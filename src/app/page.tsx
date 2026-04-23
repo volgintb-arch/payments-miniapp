@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { apiFetch, setToken } from '@/lib/hooks/use-api';
 import { PaymentForm } from './components/payment-form';
 import { PaymentList } from './components/payment-list';
+import { AdminPending } from './components/admin-pending';
 
 type UserInfo = {
   id: string;
@@ -16,7 +17,7 @@ export default function Home() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'create' | 'list'>('create');
+  const [tab, setTab] = useState<'create' | 'list' | 'admin'>('create');
   const [chatId, setChatId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -143,13 +144,25 @@ export default function Home() {
         >
           Мои платежи
         </button>
+        {user.role === 'ADMIN' && (
+          <button
+            onClick={() => setTab('admin')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'admin'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Проблемы
+          </button>
+        )}
       </nav>
 
-      {tab === 'create' ? (
+      {tab === 'create' && (
         <PaymentForm onSuccess={() => setTab('list')} chatId={chatId} />
-      ) : (
-        <PaymentList />
       )}
+      {tab === 'list' && <PaymentList />}
+      {tab === 'admin' && user.role === 'ADMIN' && <AdminPending />}
     </main>
   );
 }

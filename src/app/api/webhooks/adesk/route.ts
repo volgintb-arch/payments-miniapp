@@ -1,76 +1,67 @@
 // POST /api/webhooks/adesk
-// Вебхук от Adesk: event = transaction.created
-// При получении новой фактической транзакции — ищем PENDING_RETRO платежи,
-// которые совпадают по сумме и дате.
+// Вебхук от Adesk — срабатывает когда в Adesk появляется новая банковская
+// операция. Мы в ответ перепрогоняем матчинг для всех PENDING_RETRO платежей
+// (их обычно единицы), и если есть конкретная транзакция в payload — таргетно
+// по её сумме ускоряем.
+//
+// Работаем даже если payload в непонятном формате — падаем в «перематчить всё».
 
+import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { processRetroMatch } from '@/lib/retro-match';
 
 const WEBHOOK_SECRET = process.env.ADESK_WEBHOOK_SECRET || '';
 
-export async function POST(request: Request) {
-  // Проверяем секрет (если настроен)
+export async function POST(request: NextRequest) {
   if (WEBHOOK_SECRET) {
-    const secret = request.headers.get('x-webhook-secret');
-    if (secret !== WEBHOOK_SECRET) {
+    const fromQuery = request.nextUrl.searchParams.get('secret');
+    const fromHeader = request.headers.get('x-webhook-secret');
+    if (fromQuery !== WEBHOOK_SECRET && fromHeader !== WEBHOOK_SECRET) {
       return Response.json({ error: 'Invalid secret' }, { status: 401 });
     }
   }
 
   const body = await request.json().catch(() => null);
-  if (!body) {
-    return Response.json({ error: 'Invalid JSON' }, { status: 400 });
-  }
+  console.log('[adesk webhook]', JSON.stringify(body)?.slice(0, 500));
 
-  const { event, data } = body;
+  // Пытаемся вытащить сумму из payload (разные варианты схем Adesk)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const b = (body || {}) as any;
+  const candidateAmount = Number(
+    b?.data?.transaction?.amount ??
+    b?.transaction?.amount ??
+    b?.amount ??
+    NaN,
+  );
 
-  if (event !== 'transaction.created') {
-    return Response.json({ ok: true, skipped: true });
-  }
+  const amt =
+    Number.isFinite(candidateAmount) && candidateAmount > 0
+      ? Math.abs(candidateAmount)
+      : null;
 
-  const tx = data?.transaction;
-  if (!tx || !tx.amount) {
-    return Response.json({ ok: true, skipped: true });
-  }
-
-  const txAmount = Math.abs(Number(tx.amount));
-  const txBankAccountId = tx.bankAccount?.id;
-
-  if (!txBankAccountId) {
-    return Response.json({ ok: true, skipped: true });
-  }
-
-  // Ищем PENDING_RETRO платежи с совпадающей суммой
-  // в юнитах, привязанных к этому банковскому счёту
-  const unitBankAccounts = await prisma.unitBankAccount.findMany({
-    where: { adeskBankAccountId: txBankAccountId },
-    select: { unitId: true },
-  });
-
-  const unitIds = unitBankAccounts.map((uba) => uba.unitId);
-  if (unitIds.length === 0) {
-    return Response.json({ ok: true, skipped: true });
-  }
-
-  const pendingPayments = await prisma.payment.findMany({
+  const pending = await prisma.payment.findMany({
     where: {
       status: 'PENDING_RETRO',
-      unitId: { in: unitIds },
-      amount: { gte: txAmount - 0.01, lte: txAmount + 0.01 },
+      paymentMethod: 'card',
+      ...(amt !== null ? { amount: { gte: amt - 0.01, lte: amt + 0.01 } } : {}),
     },
+    select: { id: true },
   });
 
-  // Для каждого кандидата запускаем полный ретро-матчинг
-  const results = [];
-  for (const payment of pendingPayments) {
+  const results: { paymentId: string; status: string }[] = [];
+  for (const p of pending) {
     try {
-      const result = await processRetroMatch(payment.id);
-      results.push({ paymentId: payment.id, result: result.status });
+      const r = await processRetroMatch(p.id);
+      results.push({ paymentId: p.id, status: r.status });
     } catch (err) {
-      console.error(`Webhook retro-match failed for ${payment.id}:`, err);
-      results.push({ paymentId: payment.id, result: 'error' });
+      console.error(`[webhook] match failed for ${p.id}:`, err);
+      results.push({ paymentId: p.id, status: 'error' });
     }
   }
 
   return Response.json({ ok: true, processed: results.length, results });
+}
+
+export async function GET() {
+  return Response.json({ ok: true, endpoint: 'adesk-webhook' });
 }
