@@ -161,8 +161,9 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
   const hasSplits = splits.length > 0;
   const splitsTotal = splits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
   const amountNum = parseFloat(amount) || 0;
-  const splitsValid = hasSplits && splits.every((s) => s.unitId && s.categoryId && parseFloat(s.amount) > 0)
-    && Math.abs(splitsTotal - amountNum) < 0.01;
+  const splitsValid = hasSplits && splits.every((s) =>
+    s.unitId && s.categoryId && s.projectId && s.description.trim() && parseFloat(s.amount) > 0,
+  ) && Math.abs(splitsTotal - amountNum) < 0.01;
 
   function startSplitting() {
     // Переносим текущие значения в первый сплит
@@ -236,14 +237,25 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
     e.preventDefault();
     if (!amount || !date) return;
     if (paymentMethod === 'cash' && !safeId) return;
+    if (paymentMethod === 'card' && !cardNote.trim()) {
+      setError('Поле «Карта / заметка» обязательно');
+      return;
+    }
+    if (!description.trim()) {
+      setError('Поле «Описание» обязательно');
+      return;
+    }
 
     if (hasSplits) {
       if (!splitsValid) {
-        setError(`Сумма сплитов (${splitsTotal.toFixed(2)}) должна равняться сумме платежа (${amountNum.toFixed(2)}) и все поля заполнены.`);
+        setError(`Каждый сплит должен содержать юнит, статью, проект, описание и сумму. Сумма сплитов (${splitsTotal.toFixed(2)}) должна равняться сумме платежа (${amountNum.toFixed(2)}).`);
         return;
       }
     } else {
-      if (!unitId || !categoryId) return;
+      if (!unitId || !categoryId || !projectId) {
+        setError('Заполните юнит, статью и проект');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -292,8 +304,11 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
   const submitDisabled =
     submitting ||
     !amount ||
+    !date ||
+    !description.trim() ||
     (paymentMethod === 'cash' && !safeId) ||
-    (hasSplits ? !splitsValid : (!unitId || !categoryId));
+    (paymentMethod === 'card' && !cardNote.trim()) ||
+    (hasSplits ? !splitsValid : (!unitId || !categoryId || !projectId));
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -442,7 +457,7 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
           {/* Проект */}
           {unitId && (
             <div ref={projectRef}>
-              <label className="block text-sm font-medium mb-1">Проект (опционально)</label>
+              <label className="block text-sm font-medium mb-1">Проект</label>
               {projectId ? (
                 <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
                   <span className="text-sm flex-1">{projectName}</span>
@@ -590,13 +605,14 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
       )}
 
       <div>
-        <label className="block text-sm font-medium mb-1">Описание (общее)</label>
+        <label className="block text-sm font-medium mb-1">Описание</label>
         <input
           type="text"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           className={inputClass}
           placeholder="За что платёж"
+          required
         />
       </div>
 
@@ -609,6 +625,7 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
             onChange={(e) => setCardNote(e.target.value)}
             className={inputClass}
             placeholder="Например: Сбер *1234"
+            required
           />
         </div>
       )}
@@ -817,7 +834,7 @@ function SplitRow({
               }}
               onFocus={() => setShowProjectDropdown(true)}
               className={inputClass}
-              placeholder="Проект (опц.)"
+              placeholder="Проект"
             />
             {showProjectDropdown && projects.length > 0 && (
               <div className={dropdownClass}>
@@ -881,6 +898,14 @@ function SplitRow({
           )}
         </div>
       )}
+
+      <input
+        type="text"
+        value={split.description}
+        onChange={(e) => onChange({ description: e.target.value })}
+        className={inputClass}
+        placeholder="Описание"
+      />
 
       <input
         type="number"

@@ -49,6 +49,8 @@ export async function POST(request: NextRequest) {
   if (!amount || !date) return badRequest('amount, date are required');
   if (!safeId) return badRequest('safeId is required');
   if (!adeskCategoryId) return badRequest('adeskCategoryId is required');
+  if (!adeskProjectId) return badRequest('Выберите проект');
+  if (!description || !String(description).trim()) return badRequest('Заполните описание');
 
   async function getContractorName(id: number | null | undefined): Promise<string | null> {
     if (!id) return null;

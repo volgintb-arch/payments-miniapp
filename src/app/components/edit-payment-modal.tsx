@@ -128,6 +128,22 @@ export function EditPaymentModal({
       : allCategories;
 
   async function handleSave() {
+    if (!categoryId) {
+      setError('Выберите статью');
+      return;
+    }
+    if (!projectId) {
+      setError('Выберите проект');
+      return;
+    }
+    if (!description.trim()) {
+      setError('Заполните описание');
+      return;
+    }
+    if (payment.paymentMethod === 'card' && !cardNote.trim()) {
+      setError('Заполните поле «Карта / заметка»');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -347,7 +363,13 @@ export function EditPaymentModal({
         <div className="flex gap-2 pt-2">
           <button
             onClick={handleSave}
-            disabled={submitting || !categoryId}
+            disabled={
+              submitting ||
+              !categoryId ||
+              !projectId ||
+              !description.trim() ||
+              (payment.paymentMethod === 'card' && !cardNote.trim())
+            }
             className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50"
           >
             {submitting ? 'Сохранение...' : 'Сохранить'}

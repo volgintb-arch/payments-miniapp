@@ -55,11 +55,9 @@ export async function PATCH(
 
   const nextCategoryId = adeskCategoryId !== undefined ? Number(adeskCategoryId) : payment.adeskCategoryId;
   const nextProjectId =
-    adeskProjectId === null || adeskProjectId === ''
-      ? null
-      : adeskProjectId !== undefined
-        ? Number(adeskProjectId)
-        : payment.adeskProjectId;
+    adeskProjectId !== undefined && adeskProjectId !== null && adeskProjectId !== ''
+      ? Number(adeskProjectId)
+      : payment.adeskProjectId;
   const nextContractorId =
     adeskContractorId === null || adeskContractorId === ''
       ? null
@@ -68,6 +66,12 @@ export async function PATCH(
         : payment.adeskContractorId;
   const nextDescription = description !== undefined ? (description || null) : payment.description;
   const nextCardNote = cardNote !== undefined ? (cardNote || null) : payment.cardNote;
+
+  if (!nextProjectId) return badRequest('Выберите проект');
+  if (!nextDescription || !String(nextDescription).trim()) return badRequest('Заполните описание');
+  if (payment.paymentMethod === 'card' && (!nextCardNote || !String(nextCardNote).trim())) {
+    return badRequest('Заполните поле «Карта / заметка»');
+  }
 
   const contractorNameSnapshot = await getContractorName(nextContractorId);
   const projectNameSnapshot = await getProjectName(nextProjectId);

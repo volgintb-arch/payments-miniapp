@@ -94,6 +94,12 @@ export async function POST(request: NextRequest) {
   if (!amount || !date) {
     return badRequest('amount, date are required');
   }
+  if (!description || !String(description).trim()) {
+    return badRequest('Поле «Описание» обязательно');
+  }
+  if (!isCash && (!cardNote || !String(cardNote).trim())) {
+    return badRequest('Поле «Карта / заметка» обязательно для карты');
+  }
 
   // Нормализуем сплиты
   const splits: SplitInput[] = Array.isArray(splitsRaw) && splitsRaw.length > 0
@@ -110,10 +116,9 @@ export async function POST(request: NextRequest) {
   const hasSplits = splits.length > 0;
 
   if (hasSplits) {
-    // Валидация сплитов
     for (const s of splits) {
-      if (!s.unitId || !s.adeskCategoryId || !s.amount) {
-        return badRequest('Каждый сплит должен содержать unitId, adeskCategoryId, amount');
+      if (!s.unitId || !s.adeskCategoryId || !s.adeskProjectId || !s.amount || !s.description || !String(s.description).trim()) {
+        return badRequest('Каждый сплит должен содержать юнит, статью, проект, описание и сумму');
       }
     }
     const total = splits.reduce((sum, s) => sum + s.amount, 0);
@@ -121,8 +126,8 @@ export async function POST(request: NextRequest) {
       return badRequest(`Сумма сплитов (${total}) не равна сумме платежа (${amount})`);
     }
   } else {
-    if (!unitId || !adeskCategoryId) {
-      return badRequest('unitId, adeskCategoryId are required (или передайте splits[])');
+    if (!unitId || !adeskCategoryId || !adeskProjectId) {
+      return badRequest('Заполните юнит, статью и проект');
     }
   }
 

@@ -105,6 +105,14 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!amount || !date || !safeId || !categoryId) return;
+    if (!projectId) {
+      setError('Выберите проект');
+      return;
+    }
+    if (!description.trim()) {
+      setError('Заполните описание');
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -243,7 +251,7 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
 
       {/* Проект */}
       <div ref={projectRef}>
-        <label className="block text-sm font-medium mb-1">Проект (опционально)</label>
+        <label className="block text-sm font-medium mb-1">Проект</label>
         {projectId ? (
           <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
             <span className="text-sm flex-1">{projectName}</span>
@@ -352,13 +360,14 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
 
       {/* Описание */}
       <div>
-        <label className="block text-sm font-medium mb-1">Описание (опционально)</label>
+        <label className="block text-sm font-medium mb-1">Описание</label>
         <input
           type="text"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           className={inputClass}
           placeholder="Откуда приход"
+          required
         />
       </div>
 
@@ -366,7 +375,7 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
 
       <button
         type="submit"
-        disabled={submitting || !amount || !safeId || !categoryId}
+        disabled={submitting || !amount || !safeId || !categoryId || !projectId || !description.trim()}
         className="w-full bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-green-700 transition-colors"
       >
         {submitting ? 'Отправка...' : 'Создать приход'}
