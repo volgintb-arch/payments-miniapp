@@ -13,6 +13,16 @@ type Candidate = {
   takenByPaymentId: string | null;
 };
 
+type SplitDetail = {
+  id: string;
+  unitName: string;
+  categoryName: string;
+  projectName: string | null;
+  contractorName: string | null;
+  amount: number;
+  description: string | null;
+};
+
 type PendingPayment = {
   id: string;
   amount: number;
@@ -21,10 +31,17 @@ type PendingPayment = {
   cardNote: string | null;
   unitName: string;
   userName: string;
+  userTag: string | null;
+  categoryName: string;
+  projectName: string | null;
+  contractorName: string | null;
+  paymentMethod: string;
+  adeskSafeId: number | null;
   status: 'PENDING_RETRO' | 'NEEDS_REVIEW' | 'ORPHANED';
   retroAttempts: number;
   createdAt: string;
   hasSplits: boolean;
+  splits: SplitDetail[];
   candidates: Candidate[];
 };
 
@@ -48,6 +65,10 @@ export function AdminPending() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, Set<number>>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const toggleExpand = (id: string) =>
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -228,13 +249,18 @@ export function AdminPending() {
       )}
       {payments.map((p) => (
         <div key={p.id} className="border rounded-lg p-3 bg-white overflow-hidden">
-          <div className="flex justify-between items-start gap-2 mb-2">
+          <button
+            type="button"
+            onClick={() => toggleExpand(p.id)}
+            className="w-full text-left flex justify-between items-start gap-2 mb-2"
+          >
             <div className="flex-1 min-w-0">
-              <div className="font-semibold break-words">
+              <div className="font-semibold break-words flex items-center gap-1">
+                <span className="text-gray-400 text-xs">{expanded[p.id] ? '▾' : '▸'}</span>
                 {p.amount.toLocaleString('ru-RU')} ₽ · {p.unitName}
               </div>
               <div className="text-xs text-gray-500 break-words">
-                {p.date} · {p.userName} · карта: {p.cardNote || '—'}
+                {p.date} · {p.userTag || p.userName} · карта: {p.cardNote || '—'}
               </div>
               {p.description && (
                 <div className="text-xs text-gray-700 mt-1 break-words">«{p.description}»</div>
@@ -254,7 +280,39 @@ export function AdminPending() {
                 попыток: {p.retroAttempts}
               </div>
             </div>
-          </div>
+          </button>
+
+          {expanded[p.id] && (
+            <div className="mb-2 p-2 bg-gray-50 rounded text-xs space-y-1 break-words">
+              <div><span className="text-gray-500">Способ:</span> {p.paymentMethod === 'cash' ? 'Наличные' : 'Карта'}</div>
+              <div><span className="text-gray-500">Создан:</span> {new Date(p.createdAt).toLocaleString('ru-RU')}</div>
+              <div><span className="text-gray-500">Сотрудник:</span> {p.userName}{p.userTag ? ` (${p.userTag})` : ''}</div>
+              {!p.hasSplits ? (
+                <>
+                  <div><span className="text-gray-500">Юнит:</span> {p.unitName}</div>
+                  <div><span className="text-gray-500">Статья:</span> {p.categoryName}</div>
+                  <div><span className="text-gray-500">Проект:</span> {p.projectName || '—'}</div>
+                  <div><span className="text-gray-500">Контрагент:</span> {p.contractorName || '—'}</div>
+                  <div><span className="text-gray-500">Описание:</span> {p.description || '—'}</div>
+                  <div><span className="text-gray-500">Карта/заметка:</span> {p.cardNote || '—'}</div>
+                </>
+              ) : (
+                <>
+                  <div className="font-medium text-gray-700">Сплиты ({p.splits.length}):</div>
+                  {p.splits.map((s, idx) => (
+                    <div key={s.id} className="border-l-2 border-blue-200 pl-2 ml-1 space-y-0.5">
+                      <div className="font-medium">#{idx + 1} · {s.amount.toLocaleString('ru-RU')} ₽</div>
+                      <div><span className="text-gray-500">Юнит:</span> {s.unitName}</div>
+                      <div><span className="text-gray-500">Статья:</span> {s.categoryName}</div>
+                      <div><span className="text-gray-500">Проект:</span> {s.projectName || '—'}</div>
+                      <div><span className="text-gray-500">Контрагент:</span> {s.contractorName || '—'}</div>
+                      <div><span className="text-gray-500">Описание:</span> {s.description || '—'}</div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
 
           {p.candidates.length === 0 ? (
             <div className="text-xs text-gray-400 italic py-2">

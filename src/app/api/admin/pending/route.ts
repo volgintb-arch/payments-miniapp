@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       paymentMethod: 'card',
     },
     include: {
-      user: { select: { firstName: true, lastName: true } },
+      user: { select: { firstName: true, lastName: true, telegramUsername: true } },
       unit: { select: { name: true } },
       splits: true,
     },
@@ -112,6 +112,28 @@ export async function GET(request: NextRequest) {
       if (t.adeskConfirmedTransactionId) takenMap.set(t.adeskConfirmedTransactionId, t.id);
     }
 
+    const category = await prisma.categoryCache.findUnique({
+      where: { adeskId: p.adeskCategoryId },
+    });
+
+    const splitsDetails = await Promise.all(
+      p.splits.map(async (s) => {
+        const sUnit = await prisma.unit.findUnique({ where: { id: s.unitId } });
+        const sCategory = await prisma.categoryCache.findUnique({
+          where: { adeskId: s.adeskCategoryId },
+        });
+        return {
+          id: s.id,
+          unitName: sUnit?.name ?? '—',
+          categoryName: sCategory?.name ?? '—',
+          projectName: s.projectNameSnapshot,
+          contractorName: s.contractorNameSnapshot,
+          amount: Number(s.amount),
+          description: s.description,
+        };
+      }),
+    );
+
     out.push({
       id: p.id,
       amount: target,
@@ -120,10 +142,17 @@ export async function GET(request: NextRequest) {
       cardNote: p.cardNote,
       unitName: p.unit.name,
       userName: `${p.user.firstName} ${p.user.lastName ?? ''}`.trim(),
+      userTag: p.user.telegramUsername ? `@${p.user.telegramUsername}` : null,
+      categoryName: category?.name ?? '—',
+      projectName: p.projectNameSnapshot,
+      contractorName: p.contractorNameSnapshot,
+      paymentMethod: p.paymentMethod,
+      adeskSafeId: p.adeskSafeId,
       status: p.status,
       retroAttempts: p.retroAttempts,
       createdAt: p.createdAt,
       hasSplits: p.splits.length > 0,
+      splits: splitsDetails,
       candidates: uniq.slice(0, 20).map((c) => ({
         ...c,
         takenByPaymentId: takenMap.get(c.txId) || null,
