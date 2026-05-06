@@ -22,15 +22,32 @@ export default function Home() {
   const [chatId, setChatId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Синхронизация темы Telegram → класс .dark на <html>.
+    // Делаем это сразу (не в setTimeout), чтобы UI не вспышкой переключился.
+    function applyTheme() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tg = (window as any).Telegram?.WebApp;
+      const scheme = tg?.colorScheme as 'light' | 'dark' | undefined;
+      const isDark =
+        scheme === 'dark' ||
+        (!scheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', isDark);
+    }
+    applyTheme();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tg = (window as any).Telegram?.WebApp;
+    tg?.onEvent?.('themeChanged', applyTheme);
+
     // Даём время Telegram SDK загрузиться
     const timer = setTimeout(() => {
       init();
     }, 500);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      tg?.offEvent?.('themeChanged', applyTheme);
+    };
 
     async function init() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tg = (window as any).Telegram?.WebApp;
 
       // Читаем chat_id СРАЗУ, до проверки токена
       // start_param формат: c<chatId>t<threadId> или c<chatId>
