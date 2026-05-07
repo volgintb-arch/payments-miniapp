@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '@/lib/hooks/use-api';
+import { matchesSearch } from '@/lib/search';
 
 type CategoryGroup = {
   groupId: number;
@@ -106,7 +107,7 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
   const allCategories = flattenCategories(groups);
   const filteredCategories =
     categoryQuery.length >= 1
-      ? allCategories.filter((c) => c.name.toLowerCase().includes(categoryQuery.toLowerCase()))
+      ? allCategories.filter((c) => matchesSearch(c.name, categoryQuery))
       : allCategories;
 
   async function handleSubmit(e: React.FormEvent) {

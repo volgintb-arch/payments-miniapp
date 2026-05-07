@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '@/lib/hooks/use-api';
+import { matchesSearch } from '@/lib/search';
 
 type Unit = { id: number; name: string };
 type CategoryGroup = {
@@ -162,9 +163,7 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
 
   const allCategories = flattenCategories(groups);
   const filteredCategories = categoryQuery.length >= 1
-    ? allCategories.filter((c) =>
-        c.name.toLowerCase().includes(categoryQuery.toLowerCase()),
-      )
+    ? allCategories.filter((c) => matchesSearch(c.name, categoryQuery))
     : allCategories;
 
   const hasSplits = splits.length > 0;
@@ -733,9 +732,7 @@ function SplitRow({
 
   const allCategories = flattenCategories(groups);
   const filteredCategories = categoryQuery.length >= 1
-    ? allCategories.filter((c) =>
-        c.name.toLowerCase().includes(categoryQuery.toLowerCase()),
-      )
+    ? allCategories.filter((c) => matchesSearch(c.name, categoryQuery))
     : allCategories;
 
   const inputClass = 'w-full border rounded-lg px-2 py-1.5 text-sm bg-white';
