@@ -78,36 +78,41 @@ async function handleGet(request: NextRequest) {
       bankAccountId: number;
     }> = [];
 
-    for (const baId of bankAccountIds) {
-      try {
-        const res = await adesk.listTransactions({
-          status: 'completed',
-          type: 'outcome',
-          bankAccount: baId,
-          rangeStart: fmt(rangeStart),
-          rangeEnd: fmt(rangeEnd),
-        });
-        const txs = res.transactions || [];
-        for (const t of txs) {
-          const amt = Math.abs(Number(t.amount));
-          const diff = Math.abs(amt - target);
-          if (diff <= AMOUNT_TOLERANCE) {
-            candidates.push({
-              txId: t.id,
-              amount: amt,
-              date: t.date,
-              diff,
-              description: t.description || '',
-              bankAccountId: baId,
-            });
-          }
-        }
-      } catch (err) {
-        // Не валим весь список если Adesk дал HTML/rate-limit на одном счёте
+    // Параллельно опрашиваем все счета юнита, чтобы не множить задержку
+    const baResults = await Promise.allSettled(
+      bankAccountIds.map((baId) =>
+        adesk
+          .listTransactions({
+            status: 'completed',
+            type: 'outcome',
+            bankAccount: baId,
+            rangeStart: fmt(rangeStart),
+            rangeEnd: fmt(rangeEnd),
+          })
+          .then((res) => ({ baId, txs: res.transactions || [] })),
+      ),
+    );
+    for (const r of baResults) {
+      if (r.status === 'rejected') {
         console.error(
-          `[admin/pending] listTransactions failed: payment=${p.id} bankAccount=${baId}:`,
-          err instanceof Error ? err.message : err,
+          `[admin/pending] listTransactions failed: payment=${p.id}:`,
+          r.reason instanceof Error ? r.reason.message : r.reason,
         );
+        continue;
+      }
+      for (const t of r.value.txs) {
+        const amt = Math.abs(Number(t.amount));
+        const diff = Math.abs(amt - target);
+        if (diff <= AMOUNT_TOLERANCE) {
+          candidates.push({
+            txId: t.id,
+            amount: amt,
+            date: t.date,
+            diff,
+            description: t.description || '',
+            bankAccountId: r.value.baId,
+          });
+        }
       }
     }
 

@@ -21,6 +21,7 @@ const BASE = process.env.ADESK_API_BASE || 'https://api.adesk.ru';
 const TOKEN = process.env.ADESK_API_TOKEN || '';
 
 const RETRY_DELAYS = [1000, 3000, 10000];
+const FETCH_TIMEOUT_MS = 15000;
 
 async function request<T>(
   method: 'GET' | 'POST',
@@ -55,7 +56,19 @@ async function request<T>(
   }
 
   for (let attempt = 0; attempt <= 2; attempt++) {
-    const res = await fetch(url.toString(), { method, headers, body });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), { method, headers, body, signal: controller.signal });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(`Adesk timeout (>${FETCH_TIMEOUT_MS}ms) on ${method} ${endpoint}`);
+      }
+      throw err;
+    }
+    clearTimeout(timeoutId);
 
     if (res.status === 429) {
       if (attempt < 2) {
