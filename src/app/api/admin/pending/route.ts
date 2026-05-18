@@ -43,8 +43,7 @@ async function handleGet(request: NextRequest) {
     orderBy: { createdAt: 'desc' },
   });
 
-  const out = [];
-  for (const p of payments) {
+  const out = await Promise.all(payments.map(async (p) => {
     const unitIds = new Set<number>([p.unitId]);
     for (const s of p.splits) unitIds.add(s.unitId);
     const userUnits = await prisma.userUnit.findMany({
@@ -159,7 +158,7 @@ async function handleGet(request: NextRequest) {
       }),
     );
 
-    out.push({
+    return {
       id: p.id,
       amount: target,
       date: fmt(paymentDate),
@@ -182,8 +181,8 @@ async function handleGet(request: NextRequest) {
         ...c,
         takenByPaymentId: takenMap.get(c.txId) || null,
       })),
-    });
-  }
+    };
+  }));
 
   // Приходы: все, что не в MATCHED — висящие (FAILED, PENDING)
   const failedIncomes = await prisma.cashIncome.findMany({
