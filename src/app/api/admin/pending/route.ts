@@ -14,6 +14,18 @@ const WINDOW_DAYS = 7;
 const AMOUNT_TOLERANCE = 10;
 
 export async function GET(request: NextRequest) {
+  try {
+    return await handleGet(request);
+  } catch (err) {
+    console.error('[admin/pending] fatal:', err);
+    return Response.json(
+      { error: err instanceof Error ? err.message : 'Internal error' },
+      { status: 500 },
+    );
+  }
+}
+
+async function handleGet(request: NextRequest) {
   if (!isAuthorized(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
