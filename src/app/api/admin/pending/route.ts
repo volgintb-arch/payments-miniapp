@@ -67,27 +67,35 @@ export async function GET(request: NextRequest) {
     }> = [];
 
     for (const baId of bankAccountIds) {
-      const res = await adesk.listTransactions({
-        status: 'completed',
-        type: 'outcome',
-        bankAccount: baId,
-        rangeStart: fmt(rangeStart),
-        rangeEnd: fmt(rangeEnd),
-      });
-      const txs = res.transactions || [];
-      for (const t of txs) {
-        const amt = Math.abs(Number(t.amount));
-        const diff = Math.abs(amt - target);
-        if (diff <= AMOUNT_TOLERANCE) {
-          candidates.push({
-            txId: t.id,
-            amount: amt,
-            date: t.date,
-            diff,
-            description: t.description || '',
-            bankAccountId: baId,
-          });
+      try {
+        const res = await adesk.listTransactions({
+          status: 'completed',
+          type: 'outcome',
+          bankAccount: baId,
+          rangeStart: fmt(rangeStart),
+          rangeEnd: fmt(rangeEnd),
+        });
+        const txs = res.transactions || [];
+        for (const t of txs) {
+          const amt = Math.abs(Number(t.amount));
+          const diff = Math.abs(amt - target);
+          if (diff <= AMOUNT_TOLERANCE) {
+            candidates.push({
+              txId: t.id,
+              amount: amt,
+              date: t.date,
+              diff,
+              description: t.description || '',
+              bankAccountId: baId,
+            });
+          }
         }
+      } catch (err) {
+        // Не валим весь список если Adesk дал HTML/rate-limit на одном счёте
+        console.error(
+          `[admin/pending] listTransactions failed: payment=${p.id} bankAccount=${baId}:`,
+          err instanceof Error ? err.message : err,
+        );
       }
     }
 

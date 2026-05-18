@@ -65,7 +65,19 @@ async function request<T>(
       throw new Error(`Adesk rate limit exceeded after ${attempt + 1} attempts`);
     }
 
-    const data = (await res.json()) as AdeskResponse<T>;
+    const text = await res.text();
+    let data: AdeskResponse<T>;
+    try {
+      data = JSON.parse(text) as AdeskResponse<T>;
+    } catch {
+      console.error(
+        `[adesk ${method} ${endpoint}] non-JSON response (status ${res.status}):`,
+        text.slice(0, 300),
+      );
+      throw new Error(
+        `Adesk вернул не-JSON (status ${res.status}). Скорее всего временный сбой/rate-limit.`,
+      );
+    }
     if (data.success === false) {
       console.error(
         `[adesk ${method} ${endpoint}] success:false`,
