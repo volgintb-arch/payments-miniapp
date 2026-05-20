@@ -78,6 +78,7 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
     apiFetch('/api/sync-projects', { method: 'POST' })
       .then(() => setProjectsVersion((v) => v + 1))
       .catch(() => {});
+    apiFetch('/api/sync-categories', { method: 'POST' }).catch(() => {});
   }, []);
 
   useEffect(() => {

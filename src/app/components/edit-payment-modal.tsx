@@ -83,6 +83,7 @@ export function EditPaymentModal({
   }, []);
 
   useEffect(() => {
+    apiFetch('/api/sync-categories', { method: 'POST' }).catch(() => {});
     apiFetch<{ groups: CategoryGroup[] }>(`/api/categories?unitId=${payment.unitId}`).then(
       (res) => {
         setGroups(res.groups);
