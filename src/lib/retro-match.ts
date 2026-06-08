@@ -1,19 +1,19 @@
 // src/lib/retro-match.ts
-// Ретро-матчинг: ищет фактическую операцию (или пару операций) в Adesk,
-// совпадающую с платежом.
+// Ретро-матчинг: ищет фактическую операцию в Adesk, совпадающую с платежом.
 //
 // Алгоритм:
-//   1. Получаем банковские счета юнитов платежа (и юнитов из сплитов, если есть)
-//      + всех юнитов, к которым у пользователя есть доступ.
-//   2. Запрашиваем completed-операции из Adesk за окно ±4 дня от даты платежа
-//      (банк иногда посчитает операцию на 2-3 дня позже).
-//   3. Первый проход: точное совпадение суммы (±0.01).
-//   4. Если пусто — второй проход: пара операций того же дня с тем же
-//      description-префиксом (банк иногда разбивает чек на 2 операции —
-//      например, 628.42 + 9.09 = 637.51 в KUPER2). Привязываем обе к одному
-//      платежу.
-//   5. Исключаем уже привязанные к другим платежам транзакции.
-//   6. 1 кандидат/пара → MATCHED, >1 → NEEDS_REVIEW, 0 → PENDING_RETRO.
+//   1. Берём банковские счета ИМЕННО юнита платежа (+ юнитов сплитов).
+//      userUnits-расширение НЕ используем — это плодило кросс-банковые матчи
+//      между разными юр.лицами одного и того же сотрудника.
+//   2. Запрашиваем completed-операции из Adesk за окно ±4 дня от даты платежа.
+//   3. Фильтруем: только карточные операции (есть маска карты / "Терминал")
+//      с тем же суффиксом карты, что и payment.cardNote.
+//   4. Точное совпадение по сумме (±0.01) → 1 кандидат = MATCHED, >1 = NEEDS_REVIEW.
+//   5. Если нет точного, пытаемся составное совпадение из 2 операций того же
+//      дня/мерчанта — но всегда отправляем в NEEDS_REVIEW (auto-MATCH для пар
+//      слишком склонен к ложным срабатываниям; админ подтверждает руками).
+//   6. Сплит-платежи в составной матчинг не идут вообще (избежать двойного
+//      учёта в Adesk).
 
 import { prisma } from './db';
 import { adesk } from './adesk/client';
@@ -70,12 +70,27 @@ export async function findMatchingTransaction(
 
   if (!payment) throw new Error(`Payment ${paymentId} not found`);
 
-  const userUnits = await prisma.userUnit.findMany({
-    where: { userId: payment.userId },
-    select: { unitId: true },
-  });
-  const unitIds = new Set<number>(userUnits.map((u) => u.unitId));
-  unitIds.add(payment.unitId);
+  // Guard 1: уже привязан — не перематчиваем.
+  if (payment.status === 'MATCHED' && payment.adeskConfirmedTransactionId) {
+    return {
+      status: 'matched',
+      transactionIds: [payment.adeskConfirmedTransactionId],
+    };
+  }
+
+  const cardSuffix = extractCardSuffix(payment.cardNote);
+
+  // Guard 2: карточный платёж без cardNote — матчить нечего, иначе фильтр
+  // по карте отключится и любая транзакция той же суммы может прицепиться.
+  if (payment.paymentMethod === 'card' && !cardSuffix) {
+    console.warn(`[match] payment ${paymentId} is card but has no cardNote — skip matching`);
+    return { status: 'not_found' };
+  }
+
+  // Берём счета только юнита платежа (+ юнитов сплитов).
+  // userUnits-расширение здесь использовать НЕЛЬЗЯ: оно даёт кандидатов
+  // из чужих юр.лиц того же пользователя — уже ловили баг Локтионов↔Волгин.
+  const unitIds = new Set<number>([payment.unitId]);
   for (const s of payment.splits) unitIds.add(s.unitId);
 
   const bankAccounts = await prisma.unitBankAccount.findMany({
@@ -113,7 +128,6 @@ export async function findMatchingTransaction(
     }
   }
 
-  const cardSuffix = extractCardSuffix(payment.cardNote);
   const uniqueTxs = new Map<number, AdeskTransaction>();
   for (const tx of allTxs) {
     if (!isCardTransaction(tx.description)) continue;
@@ -145,47 +159,44 @@ export async function findMatchingTransaction(
     return { status: 'needs_review', candidates: availableSingles.map((id) => [id]) };
   }
 
-  // ===== Проход 2: композиция из 2 операций того же дня/контрагента =====
-  const byDayVendor = new Map<string, AdeskTransaction[]>();
-  for (const tx of uniqueTxs.values()) {
-    const vendor = (tx.description || '').slice(0, VENDOR_PREFIX_LEN);
-    const key = `${tx.date}|${vendor}`;
-    const arr = byDayVendor.get(key) || [];
-    arr.push(tx);
-    byDayVendor.set(key, arr);
-  }
+  // ===== Проход 2: композиция из 2 операций того же дня/мерчанта =====
+  // Только для платежей без сплитов — иначе двойной учёт parts в Adesk.
+  // И всегда NEEDS_REVIEW, чтобы админ подтвердил руками: пары слишком
+  // склонны к ложному срабатыванию (два независимых Yandex Go ≈ одна
+  // покупка той же суммы).
+  if (payment.splits.length === 0) {
+    const byDayVendor = new Map<string, AdeskTransaction[]>();
+    for (const tx of uniqueTxs.values()) {
+      const vendor = (tx.description || '').slice(0, VENDOR_PREFIX_LEN);
+      const key = `${tx.date}|${vendor}`;
+      const arr = byDayVendor.get(key) || [];
+      arr.push(tx);
+      byDayVendor.set(key, arr);
+    }
 
-  const pairs: number[][] = [];
-  for (const txs of byDayVendor.values()) {
-    if (txs.length < 2) continue;
-    for (let i = 0; i < txs.length; i++) {
-      for (let j = i + 1; j < txs.length; j++) {
-        const a = Math.abs(Number(txs[i].amount));
-        const b = Math.abs(Number(txs[j].amount));
-        if (Math.abs(a + b - paymentAmount) < AMOUNT_EPSILON) {
-          pairs.push([txs[i].id, txs[j].id]);
+    const pairs: number[][] = [];
+    for (const txs of byDayVendor.values()) {
+      if (txs.length < 2) continue;
+      for (let i = 0; i < txs.length; i++) {
+        for (let j = i + 1; j < txs.length; j++) {
+          const a = Math.abs(Number(txs[i].amount));
+          const b = Math.abs(Number(txs[j].amount));
+          if (Math.abs(a + b - paymentAmount) < AMOUNT_EPSILON) {
+            pairs.push([txs[i].id, txs[j].id]);
+          }
         }
       }
     }
-  }
 
-  const availablePairs: number[][] = [];
-  for (const pair of pairs) {
-    const avail = await filterTaken(pair, paymentId);
-    if (avail.length === pair.length) availablePairs.push(pair);
-  }
+    const availablePairs: number[][] = [];
+    for (const pair of pairs) {
+      const avail = await filterTaken(pair, paymentId);
+      if (avail.length === pair.length) availablePairs.push(pair);
+    }
 
-  if (availablePairs.length === 1) {
-    const [id1] = availablePairs[0];
-    const tx = uniqueTxs.get(id1);
-    return {
-      status: 'matched',
-      transactionIds: availablePairs[0],
-      existingDescription: tx?.description || '',
-    };
-  }
-  if (availablePairs.length > 1) {
-    return { status: 'needs_review', candidates: availablePairs };
+    if (availablePairs.length > 0) {
+      return { status: 'needs_review', candidates: availablePairs };
+    }
   }
 
   return { status: 'not_found' };
@@ -207,6 +218,16 @@ async function filterTaken(txIds: number[], paymentId: string): Promise<number[]
 }
 
 export async function processRetroMatch(paymentId: string): Promise<MatchResult> {
+  // Уже сматчен — не дёргаем Adesk повторно (иначе накопим " | " в описании
+  // и перезапишем статусом MATCHED с тем же ID).
+  const initial = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    select: { status: true, adeskConfirmedTransactionId: true },
+  });
+  if (initial?.status === 'MATCHED' && initial.adeskConfirmedTransactionId) {
+    return { status: 'matched', transactionIds: [initial.adeskConfirmedTransactionId] };
+  }
+
   const result = await findMatchingTransaction(paymentId);
 
   if (result.status === 'matched') {
@@ -252,6 +273,10 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
           lastRetroAttemptAt: new Date(),
         },
       });
+
+      // При переходе в MATCHED убираем висящие записи о конфликтах,
+      // чтобы они не торчали в админке как «требует разбора».
+      await prisma.matchConflict.deleteMany({ where: { paymentId } });
     }
   } else if (result.status === 'needs_review') {
     await prisma.payment.update({

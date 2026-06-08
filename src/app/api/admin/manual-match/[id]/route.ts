@@ -86,6 +86,9 @@ export async function POST(
     },
   });
 
+  // Снимаем висящие записи о конфликтах для этого платежа.
+  await prisma.matchConflict.deleteMany({ where: { paymentId: id } });
+
   return Response.json({
     ok: true,
     paymentId: id,

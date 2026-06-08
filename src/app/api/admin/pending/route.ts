@@ -45,13 +45,10 @@ async function handleGet(request: NextRequest) {
   });
 
   const out = await Promise.all(payments.map(async (p) => {
+    // Только юнит платежа (+ сплиты). userUnits-расширение убрано —
+    // оно подкладывало кандидатов из чужих юр.лиц того же сотрудника.
     const unitIds = new Set<number>([p.unitId]);
     for (const s of p.splits) unitIds.add(s.unitId);
-    const userUnits = await prisma.userUnit.findMany({
-      where: { userId: p.userId },
-      select: { unitId: true },
-    });
-    for (const uu of userUnits) unitIds.add(uu.unitId);
 
     const bankAccounts = await prisma.unitBankAccount.findMany({
       where: { unitId: { in: Array.from(unitIds) } },

@@ -29,12 +29,9 @@ export async function GET(
   });
   if (!payment) return Response.json({ error: 'Payment not found' }, { status: 404 });
 
-  const userUnits = await prisma.userUnit.findMany({
-    where: { userId: payment.userId },
-    select: { unitId: true },
-  });
-  const unitIds = new Set<number>(userUnits.map((u) => u.unitId));
-  unitIds.add(payment.unitId);
+  // Только юнит платежа (+ сплиты). userUnits-расширение не используем —
+  // оно подкладывало кандидатов из чужих юр.лиц того же сотрудника.
+  const unitIds = new Set<number>([payment.unitId]);
   for (const s of payment.splits) unitIds.add(s.unitId);
 
   const bankAccounts = await prisma.unitBankAccount.findMany({
