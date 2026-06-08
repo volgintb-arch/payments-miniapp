@@ -28,6 +28,14 @@ const AMOUNT_EPSILON = 0.01;
 const DATE_WINDOW_DAYS = 4;
 const VENDOR_PREFIX_LEN = 40;
 
+// Карточные операции в Adesk содержат маску карты (220445******5443)
+// или слово "Терминал" в описании. Прямые переводы со счёта (платёжки
+// бухгалтера) их не содержат и матчиться не должны.
+export function isCardTransaction(description?: string | null): boolean {
+  if (!description) return false;
+  return /\d{4,6}\*+\d{2,4}/.test(description) || /Терминал/i.test(description);
+}
+
 export async function findMatchingTransaction(
   paymentId: string,
 ): Promise<MatchResult> {
@@ -85,7 +93,10 @@ export async function findMatchingTransaction(
   }
 
   const uniqueTxs = new Map<number, AdeskTransaction>();
-  for (const tx of allTxs) uniqueTxs.set(tx.id, tx);
+  for (const tx of allTxs) {
+    if (!isCardTransaction(tx.description)) continue;
+    uniqueTxs.set(tx.id, tx);
+  }
 
   const paymentAmount = Number(payment.amount);
 
