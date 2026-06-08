@@ -36,6 +36,27 @@ export function isCardTransaction(description?: string | null): boolean {
   return /\d{4,6}\*+\d{2,4}/.test(description) || /Терминал/i.test(description);
 }
 
+// Из cardNote ("2273", "Сбер *2273", "карта 2273") вытаскиваем последние
+// 4 цифры — это суффикс карты, на которой делался платёж.
+export function extractCardSuffix(cardNote?: string | null): string | null {
+  if (!cardNote) return null;
+  const digits = cardNote.match(/\d+/g);
+  if (!digits) return null;
+  const last = digits[digits.length - 1];
+  return last.length >= 4 ? last.slice(-4) : null;
+}
+
+// Описание Adesk-операции содержит маску карты вида "220445******5443".
+// Проверяем, что последние 4 цифры маски совпадают с суффиксом карты платежа.
+export function txMatchesCard(
+  description: string | null | undefined,
+  cardSuffix: string | null,
+): boolean {
+  if (!cardSuffix) return true; // если суффикс не задан — не фильтруем
+  if (!description) return false;
+  return new RegExp(`\\*+${cardSuffix}\\b`).test(description);
+}
+
 export async function findMatchingTransaction(
   paymentId: string,
 ): Promise<MatchResult> {
@@ -92,9 +113,11 @@ export async function findMatchingTransaction(
     }
   }
 
+  const cardSuffix = extractCardSuffix(payment.cardNote);
   const uniqueTxs = new Map<number, AdeskTransaction>();
   for (const tx of allTxs) {
     if (!isCardTransaction(tx.description)) continue;
+    if (!txMatchesCard(tx.description, cardSuffix)) continue;
     uniqueTxs.set(tx.id, tx);
   }
 

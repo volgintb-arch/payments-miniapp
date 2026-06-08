@@ -8,7 +8,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
 import { getAuthUser } from '@/lib/api-helpers';
-import { isCardTransaction } from '@/lib/retro-match';
+import { isCardTransaction, extractCardSuffix, txMatchesCard } from '@/lib/retro-match';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 const WINDOW_DAYS = 7;
@@ -100,8 +100,10 @@ async function handleGet(request: NextRequest) {
         );
         continue;
       }
+      const cardSuffix = extractCardSuffix(p.cardNote);
       for (const t of r.value.txs) {
         if (!isCardTransaction(t.description)) continue;
+        if (!txMatchesCard(t.description, cardSuffix)) continue;
         const amt = Math.abs(Number(t.amount));
         const diff = Math.abs(amt - target);
         if (diff <= AMOUNT_TOLERANCE) {
