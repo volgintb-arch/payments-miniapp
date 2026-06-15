@@ -74,15 +74,31 @@ if (pending.status !== 200) {
   process.exit(1);
 }
 
+// Adesk возвращает tx.date как "DD.MM.YYYY". Парсим в Date для diff.
+function parseTxDate(s) {
+  if (!s) return null;
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
+  if (!m) return null;
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+}
+function daysBetween(a, b) {
+  return Math.round(Math.abs(a - b) / 86400000);
+}
+
 const rows = [];
 for (const p of pending.data.payments || []) {
   const exactTaken = (p.candidates || []).filter(
     (c) => Math.abs(c.diff) < 0.01 && c.takenByPaymentId,
   );
   if (!exactTaken.length) continue;
-  // Берём первого занятого exact-match (если их несколько — разруливаем
-  // первый, остальные подберёт повторный прогон скрипта).
-  rows.push({ hangingId: p.id, txId: exactTaken[0].txId, takenById: exactTaken[0].takenByPaymentId });
+  const c = exactTaken[0];
+  rows.push({
+    hangingId: p.id,
+    txId: c.txId,
+    takenById: c.takenByPaymentId,
+    txDate: c.date,
+    txDesc: c.description || '',
+  });
 }
 
 if (!rows.length) {
@@ -133,9 +149,25 @@ for (const r of rows) {
     verdict = 'AMBIGUOUS';
   }
 
+  // Подсказка по AMBIGUOUS: чья дата ближе к дате Adesk-tx?
+  let dateHint = '';
+  if (verdict === 'AMBIGUOUS') {
+    const txD = parseTxDate(r.txDate);
+    if (txD) {
+      const dh = daysBetween(h.date, txD);
+      const dt = daysBetween(t.date, txD);
+      const closer = dh < dt ? 'hanging' : dt < dh ? 'takenBy' : 'equal';
+      dateHint = `  tx.date=${r.txDate}  Δhanging=${dh}d  ΔtakenBy=${dt}d  closer=${closer}`;
+    }
+  }
+
   console.log(`tx=${r.txId}  hanging=${h.id.slice(0,8)}…  takenBy=${t.id.slice(0,8)}…  verdict=${verdict}`);
   console.log(`  hanging: ${h.amount}₽ ${fmtDate(h.date)} unit=${h.unitId} user=${h.userId.slice(0,8)} card=${h.cardNote} status=${h.status} desc=${(h.description || '').slice(0,40)}`);
   console.log(`  takenBy: ${t.amount}₽ ${fmtDate(t.date)} unit=${t.unitId} user=${t.userId.slice(0,8)} card=${t.cardNote} status=${t.status} desc=${(t.description || '').slice(0,40)}`);
+  if (dateHint) console.log(dateHint);
+  if (verdict === 'AMBIGUOUS' && r.txDesc) {
+    console.log(`  tx.desc: ${r.txDesc.slice(0, 120)}`);
+  }
   console.log();
 
   if (verdict === 'DUPLICATE_STRICT' || verdict === 'SOFT_DUPLICATE') toDelete.push({ ...r, verdict });
