@@ -1,12 +1,20 @@
-// Разруливает «висящий платёж VS точный кандидат-tx, занятый другим платежом»:
-//   • получает все PENDING_RETRO/NEEDS_REVIEW/ORPHANED + точные кандидаты с
-//     takenByPaymentId через /api/admin/pending;
-//   • для каждой пары (hanging, takenBy) сравнивает userId/amount/date/unitId:
-//       - всё совпало         → ДУБЛЬ → удаляем hanging;
-//       - что-то отличается   → ошибочный матч → unmatch takenBy
-//                                (висящий сматчится сам через rematch).
+// Разруливает «висящий платёж VS точный кандидат-tx, занятый другим платежом».
 //
-// По умолчанию dry-run: только печатает решения. Применяет с --apply.
+// Получает все PENDING_RETRO/NEEDS_REVIEW/ORPHANED + их точные кандидаты с
+// takenByPaymentId через /api/admin/pending, потом для каждой пары
+// (hanging, takenBy) сравнивает userId/unitId/amount/date/cardNote/description:
+//
+//   • DUPLICATE_STRICT   — все 6 совпали → DELETE hanging
+//   • SOFT_DUPLICATE     — user+unit+amount+cardNote+description совпали,
+//                           только дата отличается (опечатка / повторный ввод)
+//                           → DELETE hanging
+//   • WRONG_AMOUNT       — у takenBy сумма НЕ равна tx.amount (= hanging.amount).
+//                           takenBy зацепился ошибочно (старый race) → unmatch
+//   • AMBIGUOUS          — разные user / unit / card / desc, обе суммы совпадают
+//                           с tx. Кто правильный — без описания Adesk не понять.
+//                           Скрипт ничего не делает, печатает «нужен ручной разбор».
+//
+// По умолчанию dry-run: только печатает классификацию. Применяет с --apply.
 // После --apply скрипт сам дёрнет rematch.
 //
 // Запуск:
@@ -92,8 +100,11 @@ const payments = await prisma.payment.findMany({
 });
 const byId = new Map(payments.map((p) => [p.id, p]));
 
-const duplicates = [];
-const wrongMatches = [];
+const toDelete = [];   // hangingId — соответствуют DUPLICATE_STRICT и SOFT_DUPLICATE
+const toUnmatch = [];  // takenById — WRONG_AMOUNT
+const ambiguous = [];  // печатаем, не трогаем
+
+const norm = (s) => (s || '').trim().toLowerCase();
 
 for (const r of rows) {
   const h = byId.get(r.hangingId);
@@ -103,24 +114,46 @@ for (const r of rows) {
     continue;
   }
   const sameUser = h.userId === t.userId;
+  const sameUnit = h.unitId === t.unitId;
   const sameAmount = Math.abs(Number(h.amount) - Number(t.amount)) < 0.01;
   const sameDate = fmtDate(h.date) === fmtDate(t.date);
-  const sameUnit = h.unitId === t.unitId;
-  const verdict = sameUser && sameAmount && sameDate && sameUnit ? 'DUPLICATE' : 'WRONG_MATCH';
+  const sameCard = norm(h.cardNote) === norm(t.cardNote);
+  const sameDesc = norm(h.description) === norm(t.description);
 
-  const head = `tx=${r.txId}  hanging=${h.id.slice(0, 8)}…  takenBy=${t.id.slice(0, 8)}…  verdict=${verdict}`;
-  console.log(head);
+  let verdict;
+  if (sameUser && sameUnit && sameAmount && sameDate && sameCard && sameDesc) {
+    verdict = 'DUPLICATE_STRICT';
+  } else if (sameUser && sameUnit && sameAmount && sameCard && sameDesc && !sameDate) {
+    verdict = 'SOFT_DUPLICATE';
+  } else if (!sameAmount) {
+    // hanging.amount = tx.amount (close candidate diff<0.01), значит takenBy
+    // когда-то прицепился к этой tx, имея ДРУГУЮ сумму — это явный ошибочный матч.
+    verdict = 'WRONG_AMOUNT';
+  } else {
+    verdict = 'AMBIGUOUS';
+  }
+
+  console.log(`tx=${r.txId}  hanging=${h.id.slice(0,8)}…  takenBy=${t.id.slice(0,8)}…  verdict=${verdict}`);
   console.log(`  hanging: ${h.amount}₽ ${fmtDate(h.date)} unit=${h.unitId} user=${h.userId.slice(0,8)} card=${h.cardNote} status=${h.status} desc=${(h.description || '').slice(0,40)}`);
   console.log(`  takenBy: ${t.amount}₽ ${fmtDate(t.date)} unit=${t.unitId} user=${t.userId.slice(0,8)} card=${t.cardNote} status=${t.status} desc=${(t.description || '').slice(0,40)}`);
   console.log();
 
-  if (verdict === 'DUPLICATE') duplicates.push(r);
-  else wrongMatches.push(r);
+  if (verdict === 'DUPLICATE_STRICT' || verdict === 'SOFT_DUPLICATE') toDelete.push({ ...r, verdict });
+  else if (verdict === 'WRONG_AMOUNT') toUnmatch.push({ ...r, verdict });
+  else ambiguous.push({ ...r, verdict });
 }
 
 console.log(`\n=== summary ===`);
-console.log(`duplicates:    ${duplicates.length}   (action: DELETE hanging)`);
-console.log(`wrong matches: ${wrongMatches.length}   (action: unmatch takenBy, then rematch)`);
+console.log(`DELETE hanging:     ${toDelete.length}   (DUPLICATE_STRICT + SOFT_DUPLICATE)`);
+console.log(`unmatch takenBy:    ${toUnmatch.length}   (WRONG_AMOUNT)`);
+console.log(`AMBIGUOUS (manual): ${ambiguous.length}`);
+
+if (ambiguous.length) {
+  console.log('\nAMBIGUOUS — глазами разобрать (нужно описание Adesk-tx, чтобы понять кто прав):');
+  for (const a of ambiguous) {
+    console.log(`  hanging=${a.hangingId}  takenBy=${a.takenById}  tx=${a.txId}`);
+  }
+}
 
 if (!apply) {
   console.log('\nЗапусти с --apply чтобы применить.');
@@ -131,21 +164,21 @@ if (!apply) {
 console.log('\n=== applying ===');
 
 let okDel = 0, failDel = 0;
-for (const r of duplicates) {
+for (const r of toDelete) {
   const res = await authedFetch('DELETE', `/api/admin/pending/${r.hangingId}`);
-  if (res.status === 200) { okDel++; console.log(`  DELETE hanging ${r.hangingId.slice(0,8)}… → ok`); }
+  if (res.status === 200) { okDel++; console.log(`  DELETE ${r.verdict} hanging ${r.hangingId.slice(0,8)}… → ok`); }
   else { failDel++; console.log(`  DELETE hanging ${r.hangingId.slice(0,8)}… → ${res.status}`, res.data); }
 }
 
 let okUn = 0, failUn = 0;
-for (const r of wrongMatches) {
+for (const r of toUnmatch) {
   const res = await authedFetch('POST', `/api/admin/payments/${r.takenById}/unmatch`);
   if (res.status === 200) { okUn++; console.log(`  unmatch takenBy ${r.takenById.slice(0,8)}… → ok (released tx ${res.data.releasedTxId})`); }
   else { failUn++; console.log(`  unmatch takenBy ${r.takenById.slice(0,8)}… → ${res.status}`, res.data); }
 }
 
-console.log(`\ndeletes: ${okDel}/${duplicates.length} ok, ${failDel} fail`);
-console.log(`unmatches: ${okUn}/${wrongMatches.length} ok, ${failUn} fail`);
+console.log(`\ndeletes:   ${okDel}/${toDelete.length} ok, ${failDel} fail`);
+console.log(`unmatches: ${okUn}/${toUnmatch.length} ok, ${failUn} fail`);
 
 if (okUn > 0) {
   console.log('\nЗапускаю rematch чтобы освободившиеся tx подцепились к висящим…');
