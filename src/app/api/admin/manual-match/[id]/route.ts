@@ -71,12 +71,14 @@ export async function POST(
   }
   if (payment.description) updates.description = payment.description;
 
-  for (const txId of txIds) {
-    await adesk.updateTransaction(txId, updates);
-  }
-
-  await prisma.payment.update({
-    where: { id },
+  // CAS-claim: атомарно переводим в MATCHED ДО вызова Adesk.
+  // Если параллельный rematch / другой админ уже сматчил — выходим без
+  // повторного Adesk-апдейта, иначе описание получит дубль префикса.
+  const claim = await prisma.payment.updateMany({
+    where: {
+      id,
+      status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
+    },
     data: {
       status: 'MATCHED',
       adeskConfirmedTransactionId: txIds[0],
@@ -85,6 +87,28 @@ export async function POST(
       lastRetroAttemptAt: new Date(),
     },
   });
+  if (claim.count === 0) {
+    return Response.json(
+      { error: 'Payment already matched by another process', paymentId: id },
+      { status: 409 },
+    );
+  }
+
+  try {
+    for (const txId of txIds) {
+      await adesk.updateTransaction(txId, updates);
+    }
+  } catch (err) {
+    await prisma.payment.updateMany({
+      where: { id, status: 'MATCHED', adeskConfirmedTransactionId: txIds[0] },
+      data: { status: 'PENDING_RETRO', adeskConfirmedTransactionId: null, matchedAt: null },
+    });
+    console.error(`[manual-match] Adesk update failed for ${id}, status rolled back:`, err);
+    return Response.json(
+      { error: err instanceof Error ? err.message : 'Adesk update failed' },
+      { status: 502 },
+    );
+  }
 
   // Снимаем висящие записи о конфликтах для этого платежа.
   await prisma.matchConflict.deleteMany({ where: { paymentId: id } });

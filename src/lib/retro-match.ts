@@ -263,13 +263,16 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
         updates.description = descParts.join(' | ');
       }
 
-      // Обновляем все привязанные транзакции (в композитных совпадениях их 2+)
-      for (const txId of result.transactionIds) {
-        await adesk.updateTransaction(txId, updates);
-      }
-
-      await prisma.payment.update({
-        where: { id: paymentId },
+      // CAS-claim: атомарно переводим в MATCHED ДО вызова Adesk.
+      // Если другой процесс (cron / параллельный rematch) уже застолбил
+      // платёж — updateMany вернёт count=0, мы выходим без Adesk-апдейта.
+      // Без этого было: оба процесса видели PENDING_RETRO, оба дёргали Adesk,
+      // и описание получало двойной префикс «X | X | …».
+      const claim = await prisma.payment.updateMany({
+        where: {
+          id: paymentId,
+          status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
+        },
         data: {
           status: 'MATCHED',
           adeskConfirmedTransactionId: result.transactionIds[0],
@@ -278,6 +281,30 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
           lastRetroAttemptAt: new Date(),
         },
       });
+      if (claim.count === 0) {
+        console.log(`[match] ${paymentId} already claimed by another process — skip Adesk update`);
+        return result;
+      }
+
+      try {
+        // Обновляем все привязанные транзакции (в композитных совпадениях их 2+)
+        for (const txId of result.transactionIds) {
+          await adesk.updateTransaction(txId, updates);
+        }
+      } catch (err) {
+        // Adesk упал после claim'а — откатываем статус, чтобы платёж снова
+        // попал в очередь матчинга на следующем цикле.
+        await prisma.payment.updateMany({
+          where: { id: paymentId, status: 'MATCHED', adeskConfirmedTransactionId: result.transactionIds[0] },
+          data: {
+            status: 'PENDING_RETRO',
+            adeskConfirmedTransactionId: null,
+            matchedAt: null,
+          },
+        });
+        console.error(`[match] Adesk update failed for ${paymentId}, status rolled back:`, err);
+        throw err;
+      }
 
       // При переходе в MATCHED убираем висящие записи о конфликтах,
       // чтобы они не торчали в админке как «требует разбора».
