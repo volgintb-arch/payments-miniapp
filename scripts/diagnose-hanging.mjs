@@ -4,7 +4,11 @@
 // но матчер их не нашёл (например, потому что счёт не в UnitBankAccount).
 //
 // Запуск:
-//   node --env-file=.env scripts/diagnose-hanging.mjs [--days=90] [--tol=10]
+//   node --env-file=.env scripts/diagnose-hanging.mjs [--days=90] [--tol=10] [--card-only]
+//
+// --card-only — оставить только платежи с cardNote ровно из 4 цифр (отбросить
+// легаси-заметки типа «точка Сережи», «карта белки» — их матчер по дизайну
+// всё равно не цепляет, и они требуют ручного разбора).
 //
 // На каждый hanging выводит:
 //   - метаданные платежа
@@ -32,6 +36,7 @@ const daysArg = process.argv.find((a) => a.startsWith('--days='));
 const tolArg = process.argv.find((a) => a.startsWith('--tol='));
 const DAYS = daysArg ? Number(daysArg.split('=')[1]) : 90;
 const TOL = tolArg ? Number(tolArg.split('=')[1]) : 10;
+const CARD_ONLY = process.argv.includes('--card-only');
 
 const fmt = (d) => d.toISOString().split('T')[0];
 
@@ -51,7 +56,7 @@ async function adeskGet(path, params = {}) {
 
 console.log(`window=±${DAYS}d  tolerance=${TOL}₽\n`);
 
-const hanging = await prisma.payment.findMany({
+const hangingRaw = await prisma.payment.findMany({
   where: {
     status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
     paymentMethod: 'card',
@@ -63,7 +68,10 @@ const hanging = await prisma.payment.findMany({
   },
   orderBy: { createdAt: 'desc' },
 });
-console.log(`hanging payments: ${hanging.length}\n`);
+const hanging = CARD_ONLY
+  ? hangingRaw.filter((p) => /^\d{4}$/.test((p.cardNote || '').trim()))
+  : hangingRaw;
+console.log(`hanging payments: ${hanging.length}` + (CARD_ONLY ? `  (filtered from ${hangingRaw.length} by --card-only)` : '') + '\n');
 
 const baResp = await adeskGet('/v1/bank-accounts');
 const bankAccounts = baResp.bankAccounts || [];
