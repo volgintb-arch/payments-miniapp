@@ -21,7 +21,10 @@ const BASE = process.env.ADESK_API_BASE || 'https://api.adesk.ru';
 const TOKEN = process.env.ADESK_API_TOKEN || '';
 
 const RETRY_DELAYS = [1000, 3000, 10000];
-const FETCH_TIMEOUT_MS = 15000;
+// 15s не хватало на listTransactions с широким окном по тяжёлому счёту
+// (видели массовые таймауты в rematch). 30s — комфортный запас при общем
+// бюджете запроса до 1.5 минут с двумя retries.
+const FETCH_TIMEOUT_MS = 30000;
 
 async function request<T>(
   method: 'GET' | 'POST',

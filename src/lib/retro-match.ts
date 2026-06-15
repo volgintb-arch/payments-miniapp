@@ -130,26 +130,31 @@ export async function findMatchingTransaction(
 
   const fmt = (d: Date) => d.toISOString().split('T')[0];
 
-  // С учётом 10+ счетов Adesk последовательный обход слишком медленный →
-  // ставим параллельно с allSettled, чтобы упавший один счёт не убил всю выборку.
+  // Идём пакетами по 5 счетов вместо all-at-once-14, иначе Adesk
+  // массово таймаутит запросы (видели 15s+ ответы при rematch). allSettled
+  // в пакете чтобы один зависший счёт не валил остальные.
   const allTxs: AdeskTransaction[] = [];
-  const results = await Promise.allSettled(
-    bankAccountIds.map((bankAccountId) =>
-      adesk.listTransactions({
-        status: 'completed',
-        type: 'outcome',
-        bankAccount: bankAccountId,
-        rangeStart: fmt(rangeStart),
-        rangeEnd: fmt(rangeEnd),
-      }),
-    ),
-  );
-  for (const r of results) {
-    if (r.status === 'fulfilled' && r.value.transactions) {
-      allTxs.push(...r.value.transactions);
-    } else if (r.status === 'rejected') {
-      console.error(`[match] listTransactions failed for payment ${paymentId}:`,
-        r.reason instanceof Error ? r.reason.message : r.reason);
+  const CONCURRENCY = 5;
+  for (let i = 0; i < bankAccountIds.length; i += CONCURRENCY) {
+    const batch = bankAccountIds.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((bankAccountId) =>
+        adesk.listTransactions({
+          status: 'completed',
+          type: 'outcome',
+          bankAccount: bankAccountId,
+          rangeStart: fmt(rangeStart),
+          rangeEnd: fmt(rangeEnd),
+        }),
+      ),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.transactions) {
+        allTxs.push(...r.value.transactions);
+      } else if (r.status === 'rejected') {
+        console.error(`[match] listTransactions failed for payment ${paymentId}:`,
+          r.reason instanceof Error ? r.reason.message : r.reason);
+      }
     }
   }
 
