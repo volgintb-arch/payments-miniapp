@@ -278,10 +278,14 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
         if (payment.adeskProjectId) updates.projectId = payment.adeskProjectId;
       }
 
-      const descParts = [payment.description, result.existingDescription].filter(Boolean);
-      if (descParts.length > 0) {
-        updates.description = descParts.join(' | ');
-      }
+      // Не дублируем префикс: если existingDescription уже начинается с
+      // `payment.description | ` (например, после unmatch предыдущего владельца),
+      // оставляем как есть, иначе prepend'им payment.description.
+      const pd = (payment.description || '').trim();
+      const ed = result.existingDescription || '';
+      const alreadyPrefixed = pd && (ed === pd || ed.startsWith(pd + ' |'));
+      const newDesc = !pd ? ed : alreadyPrefixed ? ed : ed ? `${pd} | ${ed}` : pd;
+      if (newDesc) updates.description = newDesc;
 
       // CAS-claim: атомарно переводим в MATCHED ДО вызова Adesk.
       // Если другой процесс (cron / параллельный rematch) уже застолбил

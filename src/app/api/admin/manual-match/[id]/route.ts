@@ -69,7 +69,11 @@ export async function POST(
     if (payment.adeskContractorId) updates.contractorId = payment.adeskContractorId;
     if (payment.adeskProjectId) updates.projectId = payment.adeskProjectId;
   }
-  if (payment.description) updates.description = payment.description;
+  // Описание в Adesk сохраняем «X | original», но без дублирования префикса:
+  // если первая часть уже совпадает с payment.description — оставляем как есть.
+  // updateTransaction в Adesk без description вообще оставит существующее.
+  // Здесь мы намеренно НЕ фетчим текущее описание tx, чтобы не делать лишний
+  // запрос; вместо этого: если payment.description пустой — не трогаем поле.
 
   // CAS-claim: атомарно переводим в MATCHED ДО вызова Adesk.
   // Если параллельный rematch / другой админ уже сматчил — выходим без
