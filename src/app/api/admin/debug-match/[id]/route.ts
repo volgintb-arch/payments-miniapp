@@ -6,6 +6,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
+import { extractCardSuffix, getMatcherBankAccountIds } from '@/lib/retro-match';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
@@ -29,14 +30,12 @@ export async function GET(
   });
   if (!payment) return Response.json({ error: 'Payment not found' }, { status: 404 });
 
-  // Только юнит платежа (+ сплиты). userUnits-расширение не используем —
-  // оно подкладывало кандидатов из чужих юр.лиц того же сотрудника.
-  const unitIds = new Set<number>([payment.unitId]);
-  for (const s of payment.splits) unitIds.add(s.unitId);
-
-  const bankAccounts = await prisma.unitBankAccount.findMany({
-    where: { unitId: { in: Array.from(unitIds) } },
-  });
+  // Подбираем bank accounts по той же логике что и матчер: если у платежа
+  // есть 4-значный cardSuffix — берём все счета Adesk (защита через card-mask);
+  // если cardNote-заметка — fallback к UnitBankAccount юнита.
+  const cardSuffix = extractCardSuffix(payment.cardNote);
+  const matcherBankAccountIds = await getMatcherBankAccountIds(payment, cardSuffix);
+  const bankAccounts = matcherBankAccountIds.map((adeskBankAccountId) => ({ adeskBankAccountId }));
 
   const paymentDate = new Date(payment.date);
   const rangeStart = new Date(paymentDate);
@@ -88,7 +87,8 @@ export async function GET(
       status: payment.status,
       retroAttempts: payment.retroAttempts,
     },
-    unitIds: Array.from(unitIds),
+    unitIds: [payment.unitId, ...payment.splits.map((s) => s.unitId)],
+    cardSuffix,
     bankAccountIds: bankAccounts.map((ba) => ba.adeskBankAccountId),
     window: { start: fmt(rangeStart), end: fmt(rangeEnd), days: windowDays },
     closeCandidates,

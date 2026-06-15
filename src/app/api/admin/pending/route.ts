@@ -8,7 +8,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
 import { getAuthUser } from '@/lib/api-helpers';
-import { isCardTransaction, extractCardSuffix, txMatchesCard } from '@/lib/retro-match';
+import { isCardTransaction, extractCardSuffix, txMatchesCard, getMatcherBankAccountIds } from '@/lib/retro-match';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 const WINDOW_DAYS = 7;
@@ -45,18 +45,11 @@ async function handleGet(request: NextRequest) {
   });
 
   const out = await Promise.all(payments.map(async (p) => {
-    // Только юнит платежа (+ сплиты). userUnits-расширение убрано —
-    // оно подкладывало кандидатов из чужих юр.лиц того же сотрудника.
-    const unitIds = new Set<number>([p.unitId]);
-    for (const s of p.splits) unitIds.add(s.unitId);
-
-    const bankAccounts = await prisma.unitBankAccount.findMany({
-      where: { unitId: { in: Array.from(unitIds) } },
-      select: { adeskBankAccountId: true },
-    });
-    const bankAccountIds = Array.from(
-      new Set(bankAccounts.map((ba) => ba.adeskBankAccountId)),
-    );
+    // Шире чем UnitBankAccount, если у платежа есть 4-значный cardSuffix —
+    // карты могут пересекать юр.лица, защита через card-mask. Подробнее
+    // см. комментарий у getMatcherBankAccountIds().
+    const cardSuffix = extractCardSuffix(p.cardNote);
+    const bankAccountIds = await getMatcherBankAccountIds(p, cardSuffix);
 
     const paymentDate = new Date(p.date);
     // Окно покрывает и дату покупки, и дату подачи — иначе для платежа за
@@ -102,7 +95,6 @@ async function handleGet(request: NextRequest) {
         );
         continue;
       }
-      const cardSuffix = extractCardSuffix(p.cardNote);
       for (const t of r.value.txs) {
         if (!isCardTransaction(t.description)) continue;
         if (!txMatchesCard(t.description, cardSuffix)) continue;

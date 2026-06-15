@@ -61,6 +61,35 @@ export function txMatchesCard(
   return new RegExp(`\\*+${cardSuffix}\\b`).test(description);
 }
 
+// Возвращает список Adesk bankAccountIds для поиска кандидатов по платежу.
+// Логика общая для матчера, admin/pending и admin/debug-match.
+//
+// • Если cardSuffix задан (новый формат «4 цифры») → все счета Adesk.
+//   Защита от crossover между юр.лицами идёт через card-mask в описании tx
+//   (фильтр txMatchesCard), а не через привязку счёта к юниту.
+//   Это нужно потому что одна карта может физически принадлежать одному
+//   юр.лицу, но использоваться для расходов проекта другого юр.лица.
+//
+// • Если cardSuffix нет (легаси-cardNote вида «точка Сережи») → fallback к
+//   bank accounts юнита платежа + сплиты. Без card-фильтра отпускать поиск
+//   на все счета НЕЛЬЗЯ — вернёт баг кросс-юр.лиц.
+export async function getMatcherBankAccountIds(
+  payment: { unitId: number; splits: Array<{ unitId: number }> },
+  cardSuffix: string | null,
+): Promise<number[]> {
+  if (cardSuffix) {
+    const all = await adesk.getBankAccounts();
+    return (all.bankAccounts || []).map((b) => b.id);
+  }
+  const unitIds = new Set<number>([payment.unitId]);
+  for (const s of payment.splits) unitIds.add(s.unitId);
+  const rows = await prisma.unitBankAccount.findMany({
+    where: { unitId: { in: Array.from(unitIds) } },
+    select: { adeskBankAccountId: true },
+  });
+  return Array.from(new Set(rows.map((r) => r.adeskBankAccountId)));
+}
+
 export async function findMatchingTransaction(
   paymentId: string,
 ): Promise<MatchResult> {
@@ -83,24 +112,7 @@ export async function findMatchingTransaction(
   }
 
   const cardSuffix = extractCardSuffix(payment.cardNote);
-  // Когда suffix не извлёкся (cardNote — заметка типа «точка Сережи»),
-  // фильтр по карте отключается через txMatchesCard(_, null) === true.
-  // Защита от FP остаётся: bank-account юнита, isCardTransaction,
-  // exact amount, single → MATCHED иначе NEEDS_REVIEW.
-
-  // Берём счета только юнита платежа (+ юнитов сплитов).
-  // userUnits-расширение здесь использовать НЕЛЬЗЯ: оно даёт кандидатов
-  // из чужих юр.лиц того же пользователя — уже ловили баг Локтионов↔Волгин.
-  const unitIds = new Set<number>([payment.unitId]);
-  for (const s of payment.splits) unitIds.add(s.unitId);
-
-  const bankAccounts = await prisma.unitBankAccount.findMany({
-    where: { unitId: { in: Array.from(unitIds) } },
-    select: { adeskBankAccountId: true },
-  });
-  const bankAccountIds = Array.from(
-    new Set(bankAccounts.map((ba) => ba.adeskBankAccountId)),
-  );
+  const bankAccountIds = await getMatcherBankAccountIds(payment, cardSuffix);
 
   if (bankAccountIds.length === 0) {
     return { status: 'not_found' };
@@ -118,18 +130,26 @@ export async function findMatchingTransaction(
 
   const fmt = (d: Date) => d.toISOString().split('T')[0];
 
+  // С учётом 10+ счетов Adesk последовательный обход слишком медленный →
+  // ставим параллельно с allSettled, чтобы упавший один счёт не убил всю выборку.
   const allTxs: AdeskTransaction[] = [];
-
-  for (const bankAccountId of bankAccountIds) {
-    const res = await adesk.listTransactions({
-      status: 'completed',
-      type: 'outcome',
-      bankAccount: bankAccountId,
-      rangeStart: fmt(rangeStart),
-      rangeEnd: fmt(rangeEnd),
-    });
-    if (res.transactions) {
-      allTxs.push(...res.transactions);
+  const results = await Promise.allSettled(
+    bankAccountIds.map((bankAccountId) =>
+      adesk.listTransactions({
+        status: 'completed',
+        type: 'outcome',
+        bankAccount: bankAccountId,
+        rangeStart: fmt(rangeStart),
+        rangeEnd: fmt(rangeEnd),
+      }),
+    ),
+  );
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value.transactions) {
+      allTxs.push(...r.value.transactions);
+    } else if (r.status === 'rejected') {
+      console.error(`[match] listTransactions failed for payment ${paymentId}:`,
+        r.reason instanceof Error ? r.reason.message : r.reason);
     }
   }
 
