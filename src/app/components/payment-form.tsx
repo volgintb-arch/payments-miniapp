@@ -245,8 +245,8 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
     e.preventDefault();
     if (!amount || !date) return;
     if (paymentMethod === 'cash' && !safeId) return;
-    if (paymentMethod === 'card' && !cardNote.trim()) {
-      setError('Поле «Карта / заметка» обязательно');
+    if (paymentMethod === 'card' && !/^\d{4}$/.test(cardNote.trim())) {
+      setError('Введите последние 4 цифры карты (только цифры)');
       return;
     }
     if (!description.trim()) {
@@ -315,7 +315,7 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
     !date ||
     !description.trim() ||
     (paymentMethod === 'cash' && !safeId) ||
-    (paymentMethod === 'card' && !cardNote.trim()) ||
+    (paymentMethod === 'card' && !/^\d{4}$/.test(cardNote.trim())) ||
     (hasSplits ? !splitsValid : (!unitId || !categoryId || !projectId));
 
   return (
@@ -374,7 +374,7 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Дата</label>
+        <label className="block text-sm font-medium mb-1">Дата покупки</label>
         <input
           type="date"
           value={date}
@@ -382,6 +382,10 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
           className={inputClass}
           required
         />
+        <div className="text-xs text-gray-500 mt-1">
+          Когда совершена покупка — может отличаться от сегодняшней даты.
+          От этого зависит автоматический матч с операцией в Adesk.
+        </div>
       </div>
 
       {!hasSplits ? (
@@ -626,15 +630,21 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
 
       {paymentMethod === 'card' && (
         <div>
-          <label className="block text-sm font-medium mb-1">Карта / заметка</label>
+          <label className="block text-sm font-medium mb-1">Последние 4 цифры карты</label>
           <input
             type="text"
+            inputMode="numeric"
+            pattern="\d{4}"
+            maxLength={4}
             value={cardNote}
-            onChange={(e) => setCardNote(e.target.value)}
+            onChange={(e) => setCardNote(e.target.value.replace(/\D/g, '').slice(0, 4))}
             className={inputClass}
-            placeholder="Например: Сбер *1234"
+            placeholder="Например: 3377"
             required
           />
+          <div className="text-xs text-gray-500 mt-1">
+            Только 4 цифры — нужны для автоматической привязки к операции в Adesk.
+          </div>
         </div>
       )}
 

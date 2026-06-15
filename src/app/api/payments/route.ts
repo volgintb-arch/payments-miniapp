@@ -103,8 +103,8 @@ export async function POST(request: NextRequest) {
   if (!description || !String(description).trim()) {
     return badRequest('Поле «Описание» обязательно');
   }
-  if (!isCash && (!cardNote || !String(cardNote).trim())) {
-    return badRequest('Поле «Карта / заметка» обязательно для карты');
+  if (!isCash && !/^\d{4}$/.test(String(cardNote ?? '').trim())) {
+    return badRequest('cardNote должен содержать ровно 4 цифры (последние цифры карты)');
   }
 
   // Нормализуем сплиты

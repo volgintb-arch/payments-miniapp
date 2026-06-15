@@ -59,9 +59,14 @@ async function handleGet(request: NextRequest) {
     );
 
     const paymentDate = new Date(p.date);
-    const rangeStart = new Date(paymentDate);
+    // Окно покрывает и дату покупки, и дату подачи — иначе для платежа за
+    // старую покупку, поданного с дефолтной датой = сегодня, админка не
+    // найдёт реальную транзакцию (она по факту в Adesk месяц назад).
+    const dateMs = paymentDate.getTime();
+    const createdMs = p.createdAt.getTime();
+    const rangeStart = new Date(Math.min(dateMs, createdMs));
     rangeStart.setDate(rangeStart.getDate() - WINDOW_DAYS);
-    const rangeEnd = new Date(paymentDate);
+    const rangeEnd = new Date(Math.max(dateMs, createdMs));
     rangeEnd.setDate(rangeEnd.getDate() + WINDOW_DAYS);
     const fmt = (d: Date) => d.toISOString().split('T')[0];
 

@@ -1,6 +1,8 @@
 // POST /api/admin/pending/rematch
-// Перезапускает ретро-матчинг для всех PENDING_RETRO / NEEDS_REVIEW платежей.
-// Используется из админки для ручного «пнуть матчер».
+// Перезапускает ретро-матчинг для всех PENDING_RETRO / NEEDS_REVIEW / ORPHANED
+// платежей. Используется из админки для ручного «пнуть матчер».
+// ORPHANED здесь нужен, чтобы платежи старше 5 дней (которые крон уже не
+// берёт) можно было пересмотреть руками после фикса матчера/расширения окна.
 // Доступ: Bearer CRON_SECRET или JWT с ролью ADMIN.
 
 import { NextRequest } from 'next/server';
@@ -17,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   const payments = await prisma.payment.findMany({
     where: {
-      status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW'] },
+      status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
       paymentMethod: 'card',
     },
     select: { id: true },

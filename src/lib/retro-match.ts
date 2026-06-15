@@ -5,9 +5,13 @@
 //   1. Берём банковские счета ИМЕННО юнита платежа (+ юнитов сплитов).
 //      userUnits-расширение НЕ используем — это плодило кросс-банковые матчи
 //      между разными юр.лицами одного и того же сотрудника.
-//   2. Запрашиваем completed-операции из Adesk за окно ±4 дня от даты платежа.
-//   3. Фильтруем: только карточные операции (есть маска карты / "Терминал")
-//      с тем же суффиксом карты, что и payment.cardNote.
+//   2. Окно — объединение ±4 дня от payment.date и ±4 дня от payment.createdAt.
+//      Если сотрудник подал платёж сегодня за покупку месячной давности —
+//      окно растягивается ровно настолько, чтобы покрыть обе границы.
+//   3. Фильтруем: только карточные операции (есть маска карты / "Терминал").
+//      Если в cardNote есть цифры — дополнительно проверяем суффикс карты;
+//      если нет (cardNote — это заметка типа «точка Сережи»), фильтр по карте
+//      пропускается — защищает по-прежнему bank-account юнита + exact amount.
 //   4. Точное совпадение по сумме (±0.01) → 1 кандидат = MATCHED, >1 = NEEDS_REVIEW.
 //   5. Если нет точного, пытаемся составное совпадение из 2 операций того же
 //      дня/мерчанта — но всегда отправляем в NEEDS_REVIEW (auto-MATCH для пар
@@ -79,13 +83,10 @@ export async function findMatchingTransaction(
   }
 
   const cardSuffix = extractCardSuffix(payment.cardNote);
-
-  // Guard 2: карточный платёж без cardNote — матчить нечего, иначе фильтр
-  // по карте отключится и любая транзакция той же суммы может прицепиться.
-  if (payment.paymentMethod === 'card' && !cardSuffix) {
-    console.warn(`[match] payment ${paymentId} is card but has no cardNote — skip matching`);
-    return { status: 'not_found' };
-  }
+  // Когда suffix не извлёкся (cardNote — заметка типа «точка Сережи»),
+  // фильтр по карте отключается через txMatchesCard(_, null) === true.
+  // Защита от FP остаётся: bank-account юнита, isCardTransaction,
+  // exact amount, single → MATCHED иначе NEEDS_REVIEW.
 
   // Берём счета только юнита платежа (+ юнитов сплитов).
   // userUnits-расширение здесь использовать НЕЛЬЗЯ: оно даёт кандидатов
@@ -105,10 +106,14 @@ export async function findMatchingTransaction(
     return { status: 'not_found' };
   }
 
-  const paymentDate = new Date(payment.date);
-  const rangeStart = new Date(paymentDate);
+  // Окно покрывает как дату покупки (payment.date), так и дату подачи
+  // (payment.createdAt) — иначе платёж за старую покупку, поданный сегодня
+  // с дефолтной датой = сегодня, никогда не найдёт реальную транзакцию.
+  const dateMs = new Date(payment.date).getTime();
+  const createdMs = payment.createdAt.getTime();
+  const rangeStart = new Date(Math.min(dateMs, createdMs));
   rangeStart.setDate(rangeStart.getDate() - DATE_WINDOW_DAYS);
-  const rangeEnd = new Date(paymentDate);
+  const rangeEnd = new Date(Math.max(dateMs, createdMs));
   rangeEnd.setDate(rangeEnd.getDate() + DATE_WINDOW_DAYS);
 
   const fmt = (d: Date) => d.toISOString().split('T')[0];
