@@ -142,8 +142,10 @@ for (const p of hanging) {
           if (!isCardTransaction(tx.description)) continue;
           if (!txMatchesCard(tx.description, cardSuffix)) continue;
           if (Math.abs(Number(tx.amount) - Number(p.amount)) >= AMOUNT_EPSILON) continue;
-          if (!tx.category) continue;             // ← главное: УЖЕ категоризирована
-          if (takenIds.has(tx.id)) continue;      // ← и не занята
+          // «Разнесена» в Adesk = есть категория ИЛИ проект (бухгалтер мог
+          // проставить только что-то одно).
+          if (!tx.category && !tx.project) continue;
+          if (takenIds.has(tx.id)) continue;
           found.push(tx);
         }
       }
@@ -164,7 +166,7 @@ console.log(`\nready to bind: ${candidates.length} / ${hanging.length}\n`);
 for (const { payment: p, tx } of candidates) {
   const userTag = p.user.telegramUsername ? `@${p.user.telegramUsername}` : '';
   console.log(`bind ${p.id.slice(0,8)}… ${p.amount}₽ ${fmt(p.date)} ${p.unit.name} ${userTag} card=${p.cardNote}`);
-  console.log(`  → tx=${tx.id} cat="${tx.category?.name}" proj="${tx.project?.name ?? '—'}"`);
+  console.log(`  → tx=${tx.id} cat="${tx.category?.name ?? '—'}" proj="${tx.project?.name ?? '—'}"`);
 }
 
 if (!apply) {
