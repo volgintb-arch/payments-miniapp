@@ -38,6 +38,7 @@ export type AdeskTransaction = {
   description?: string | null;
   bankAccount?: { id: number; name?: string };
   category?: { id: number; name?: string } | null;
+  project?: { id: number; name?: string } | null;
   contractor?: { id: number; name?: string } | null;
   importedId?: string | null;
 };

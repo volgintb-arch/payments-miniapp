@@ -5,6 +5,7 @@ import { apiFetch, setToken } from '@/lib/hooks/use-api';
 import { PaymentForm } from './components/payment-form';
 import { PaymentList } from './components/payment-list';
 import { AdminPending } from './components/admin-pending';
+import { AdminUncategorized } from './components/admin-uncategorized';
 import { IncomeForm } from './components/income-form';
 
 type UserInfo = {
@@ -18,7 +19,7 @@ export default function Home() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'create' | 'income' | 'list' | 'admin'>('create');
+  const [tab, setTab] = useState<'create' | 'income' | 'list' | 'admin' | 'uncategorized'>('create');
   const [chatId, setChatId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -141,7 +142,7 @@ export default function Home() {
         </p>
       </header>
 
-      <nav className={`grid gap-1.5 mb-6 ${user.role === 'ADMIN' ? 'grid-cols-4' : 'grid-cols-3'}`}>
+      <nav className={`grid gap-1.5 mb-6 ${user.role === 'ADMIN' ? 'grid-cols-5' : 'grid-cols-3'}`}>
         <button
           onClick={() => setTab('create')}
           className={`py-2 rounded-lg text-xs font-medium transition-colors ${
@@ -184,6 +185,18 @@ export default function Home() {
             Проблемы
           </button>
         )}
+        {user.role === 'ADMIN' && (
+          <button
+            onClick={() => setTab('uncategorized')}
+            className={`py-2 rounded-lg text-xs font-medium transition-colors ${
+              tab === 'uncategorized'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Неопознанные
+          </button>
+        )}
       </nav>
 
       {tab === 'create' && (
@@ -194,6 +207,7 @@ export default function Home() {
       )}
       {tab === 'list' && <PaymentList />}
       {tab === 'admin' && user.role === 'ADMIN' && <AdminPending />}
+      {tab === 'uncategorized' && user.role === 'ADMIN' && <AdminUncategorized />}
     </main>
   );
 }
