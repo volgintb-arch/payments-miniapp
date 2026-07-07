@@ -38,16 +38,15 @@ export function AdminUncategorized() {
   const [items, setItems] = useState<UncategorizedTx[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(7);
   const [openTxId, setOpenTxId] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch<{ items: UncategorizedTx[]; days: number; total: number }>(
-        `/api/admin/uncategorized?days=${days}`,
-      );
+      const url = `/api/admin/uncategorized?days=${days}${force ? '&nocache=1' : ''}`;
+      const res = await apiFetch<{ items: UncategorizedTx[]; days: number; total: number }>(url);
       setItems(res.items);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
@@ -81,7 +80,7 @@ export function AdminUncategorized() {
             <option value={180}>180 дн</option>
           </select>
           <button
-            onClick={load}
+            onClick={() => load(true)}
             className="text-xs px-3 py-1 bg-gray-100 rounded"
           >
             Обновить

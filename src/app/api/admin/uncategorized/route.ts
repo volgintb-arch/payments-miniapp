@@ -12,8 +12,16 @@ import { getAuthUser } from '@/lib/api-helpers';
 import { isCardTransaction } from '@/lib/retro-match';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
-const DEFAULT_DAYS = 30;
+const DEFAULT_DAYS = 7;
 const MAX_ITEMS = 100;
+const CACHE_TTL_MS = 60_000;
+
+// Простой in-memory кэш: список неопознанных tx стоит на большом окне
+// десятки секунд собирать (14 банк-счетов × Adesk latency), а после
+// разноса одной tx админ обычно тут же жмёт «Обновить» ещё раз. Держим
+// последний результат 60 секунд, разные (days, withNonCard) в отдельных
+// ключах. Кэш сбрасывается при рестарте pm2 — этого достаточно.
+const cache = new Map<string, { at: number; body: unknown }>();
 
 export async function GET(request: NextRequest) {
   try {
@@ -36,6 +44,16 @@ async function handleGet(request: NextRequest) {
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 180
     ? daysParam
     : DEFAULT_DAYS;
+  const withNonCard = request.nextUrl.searchParams.get('withNonCard') === '1';
+  const noCache = request.nextUrl.searchParams.get('nocache') === '1';
+
+  const cacheKey = `${days}|${withNonCard ? 1 : 0}`;
+  if (!noCache) {
+    const hit = cache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      return Response.json(hit.body);
+    }
+  }
 
   const today = new Date();
   const start = new Date(today);
@@ -45,9 +63,10 @@ async function handleGet(request: NextRequest) {
   const bankAccounts = (await adesk.getBankAccounts()).bankAccounts || [];
   const baById = new Map(bankAccounts.map((b) => [b.id, b]));
 
-  // Идём пакетами по 5, как в матчере.
+  // Идём пакетами по 3 — Adesk на четвертом-пятом параллельном запросе
+  // начинает тайм-аутить (видели в rematch-логе). 3 — нагрузка комфортная.
   const allTxs: { baId: number; tx: import('@/lib/adesk/types').AdeskTransaction }[] = [];
-  const CONCURRENCY = 5;
+  const CONCURRENCY = 3;
   for (let i = 0; i < bankAccounts.length; i += CONCURRENCY) {
     const batch = bankAccounts.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
@@ -72,14 +91,9 @@ async function handleGet(request: NextRequest) {
     }
   }
 
-  // Наличные/платёжки бухгалтера сюда не нужны — разносить их из мини-аппа
-  // всё равно негде (нужен sейф или сложные атрибуты). Оставляем только
-  // карточные операции (маска карты или «Терминал» в описании).
-  // Флаг ?withNonCard=1 отключает фильтр — на случай если админ захочет
-  // увидеть весь список.
-  const withNonCard = request.nextUrl.searchParams.get('withNonCard') === '1';
-
   // Фильтруем: без категории И без проекта, + только карточные (если не withNonCard).
+  // Наличные/платёжки бухгалтера сюда не нужны — разносить их из мини-аппа
+  // всё равно негде. Флаг ?withNonCard=1 отключает card-фильтр.
   const uncategorized = allTxs.filter(({ tx }) => {
     if (tx.category || tx.project) return false;
     if (!withNonCard && !isCardTransaction(tx.description)) return false;
@@ -126,7 +140,9 @@ async function handleGet(request: NextRequest) {
     })
     .slice(0, MAX_ITEMS);
 
-  return Response.json({ items, days, total: items.length });
+  const body = { items, days, total: items.length };
+  cache.set(cacheKey, { at: Date.now(), body });
+  return Response.json(body);
 }
 
 function isAuthorized(request: NextRequest): boolean {
