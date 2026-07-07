@@ -72,8 +72,19 @@ async function handleGet(request: NextRequest) {
     }
   }
 
-  // Фильтруем: без категории И без проекта.
-  const uncategorized = allTxs.filter(({ tx }) => !tx.category && !tx.project);
+  // Наличные/платёжки бухгалтера сюда не нужны — разносить их из мини-аппа
+  // всё равно негде (нужен sейф или сложные атрибуты). Оставляем только
+  // карточные операции (маска карты или «Терминал» в описании).
+  // Флаг ?withNonCard=1 отключает фильтр — на случай если админ захочет
+  // увидеть весь список.
+  const withNonCard = request.nextUrl.searchParams.get('withNonCard') === '1';
+
+  // Фильтруем: без категории И без проекта, + только карточные (если не withNonCard).
+  const uncategorized = allTxs.filter(({ tx }) => {
+    if (tx.category || tx.project) return false;
+    if (!withNonCard && !isCardTransaction(tx.description)) return false;
+    return true;
+  });
 
   // Убираем те, которые уже привязаны к какому-либо Payment в БД
   // (у Adesk-tx категории может не быть, а связь у нас есть — не показываем).

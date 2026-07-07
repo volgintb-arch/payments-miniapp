@@ -108,31 +108,34 @@ export function AdminUncategorized() {
           <div className="text-xs text-gray-700 mb-3 break-words">
             {tx.description || '—'}
           </div>
-
-          {openTxId === tx.txId ? (
-            <AssignForm
-              tx={tx}
-              onCancel={() => setOpenTxId(null)}
-              onSuccess={() => {
-                setOpenTxId(null);
-                load();
-              }}
-            />
-          ) : (
-            <button
-              onClick={() => setOpenTxId(tx.txId)}
-              className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
-            >
-              Разнести
-            </button>
-          )}
+          <button
+            onClick={() => setOpenTxId(tx.txId)}
+            className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            Разнести
+          </button>
         </div>
       ))}
+
+      {openTxId !== null && (() => {
+        const tx = items.find((t) => t.txId === openTxId);
+        if (!tx) return null;
+        return (
+          <AssignModal
+            tx={tx}
+            onCancel={() => setOpenTxId(null)}
+            onSuccess={() => {
+              setOpenTxId(null);
+              load();
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
 
-function AssignForm({
+function AssignModal({
   tx,
   onCancel,
   onSuccess,
@@ -260,11 +263,20 @@ function AssignForm({
   }
 
   const inputClass = 'w-full border rounded-lg px-2 py-1.5 text-sm bg-white';
-  const dropdownClass = 'absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto';
+  const dropdownClass = 'absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto';
   const dropdownItemClass = 'w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0';
 
   return (
-    <div className="space-y-2 border-t pt-3 mt-2">
+    <div className="fixed inset-0 z-40 bg-black/40 flex items-end sm:items-center justify-center">
+    <div className="bg-white w-full sm:max-w-md sm:rounded-lg rounded-t-lg max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="px-4 py-3 border-b flex items-center justify-between shrink-0">
+      <div>
+        <div className="text-base font-semibold">{tx.amount.toLocaleString('ru-RU')} ₽ · {tx.date}</div>
+        <div className="text-xs text-gray-500">{tx.bankAccount.name}{tx.bankAccount.legalEntity ? ` · ${tx.bankAccount.legalEntity}` : ''}</div>
+      </div>
+      <button onClick={onCancel} className="text-gray-400 text-xl leading-none px-2">✕</button>
+    </div>
+    <div className="px-4 py-3 overflow-y-auto flex-1 space-y-2">
       <select
         value={unitId ?? ''}
         onChange={(e) => setUnitId(Number(e.target.value) || null)}
@@ -408,22 +420,23 @@ function AssignForm({
       />
 
       {err && <div className="text-xs text-red-500">{err}</div>}
-
-      <div className="flex gap-2">
-        <button
-          onClick={submit}
-          disabled={submitting}
-          className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-green-700"
-        >
-          {submitting ? 'Сохранение…' : 'Сохранить'}
-        </button>
-        <button
-          onClick={onCancel}
-          className="px-4 py-2 bg-gray-100 rounded-lg text-sm"
-        >
-          Отмена
-        </button>
-      </div>
+    </div>
+    <div className="px-4 py-3 border-t flex gap-2 shrink-0 bg-white">
+      <button
+        onClick={onCancel}
+        className="px-4 py-2 bg-gray-100 rounded-lg text-sm"
+      >
+        Отмена
+      </button>
+      <button
+        onClick={submit}
+        disabled={submitting}
+        className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-green-700"
+      >
+        {submitting ? 'Сохранение…' : 'Сохранить'}
+      </button>
+    </div>
+    </div>
     </div>
   );
 }
