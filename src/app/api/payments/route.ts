@@ -152,6 +152,36 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'No access to one or more units' }, { status: 403 });
   }
 
+  // Guard от быстрого дубля: если тот же пользователь только что подал платёж
+  // с теми же ключевыми полями — не создаём второй. Речь о double-submit
+  // (тапнул «Создать» дважды) или подача той же формы с двух устройств.
+  // Реальные повторные покупки на ту же сумму в тот же день теоретически
+  // возможны, но за пределами 15-минутного окна.
+  const DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
+  const recentDuplicate = await prisma.payment.findFirst({
+    where: {
+      userId: auth.userId,
+      unitId: paymentUnitId,
+      amount: Number(amount),
+      date: new Date(date),
+      cardNote: cardNote ?? null,
+      description: description ?? null,
+      createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+    },
+    select: { id: true, status: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (recentDuplicate) {
+    return Response.json(
+      {
+        error: 'Такой же платёж уже был создан минуту назад — не дублируем.',
+        duplicatePaymentId: recentDuplicate.id,
+        status: recentDuplicate.status,
+      },
+      { status: 409 },
+    );
+  }
+
   // Снэпшоты имён (для платежа — берём из первого сплита или из body)
   const primaryCategoryId = hasSplits ? splits[0].adeskCategoryId : Number(adeskCategoryId);
   const primaryProjectId = hasSplits ? splits[0].adeskProjectId : (adeskProjectId ? Number(adeskProjectId) : null);
