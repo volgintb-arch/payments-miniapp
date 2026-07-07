@@ -44,6 +44,14 @@ export default function Home() {
     // Кнопка «Обновить» появится через 10 секунд, если авторизация ещё висит.
     const retryTimer = setTimeout(() => setShowRetry(true), 10_000);
 
+    // Аварийный таймер: если через 20 секунд мы всё ещё грузимся —
+    // значит что-то из init() тихо не выполнилось (JS-ошибка в SDK,
+    // недоступный localStorage, зависший fetch). Показываем ошибку.
+    const bailTimer = setTimeout(() => {
+      setError('Приложение не смогло инициализироваться. Попробуйте обновить страницу.');
+      setLoading(false);
+    }, 20_000);
+
     // Даём время Telegram SDK загрузиться
     const timer = setTimeout(() => {
       init();
@@ -51,29 +59,43 @@ export default function Home() {
     return () => {
       clearTimeout(timer);
       clearTimeout(retryTimer);
+      clearTimeout(bailTimer);
       tg?.offEvent?.('themeChanged', applyTheme);
     };
 
     async function init() {
+      setLoadingStep('Читаем контекст Telegram…');
 
-      // Читаем chat_id СРАЗУ, до проверки токена
-      // start_param формат: c<chatId>t<threadId> или c<chatId>
-      if (tg?.initDataUnsafe) {
-        const sp = tg.initDataUnsafe.start_param;
-        if (sp && sp.startsWith('c')) {
-          const match = sp.match(/^c(\d+)(?:t(\d+))?$/);
-          if (match) {
-            const cid = `-${match[1]}`;
-            const tid = match[2];
-            setChatId(tid ? `${cid}_${tid}` : cid);
+      // Читаем chat_id СРАЗУ, до проверки токена. Оборачиваем — на iOS
+      // WebApp SDK может кинуть при чтении initDataUnsafe в неудачный момент.
+      try {
+        if (tg?.initDataUnsafe) {
+          const sp = tg.initDataUnsafe.start_param;
+          if (sp && sp.startsWith('c')) {
+            const match = sp.match(/^c(\d+)(?:t(\d+))?$/);
+            if (match) {
+              const cid = `-${match[1]}`;
+              const tid = match[2];
+              setChatId(tid ? `${cid}_${tid}` : cid);
+            }
+          } else if (tg.initDataUnsafe.chat?.id) {
+            setChatId(String(tg.initDataUnsafe.chat.id));
           }
-        } else if (tg.initDataUnsafe.chat?.id) {
-          setChatId(String(tg.initDataUnsafe.chat.id));
         }
+      } catch (err) {
+        console.warn('[init] failed to read tg.initDataUnsafe:', err);
+      }
+
+      // Читаем localStorage тоже под try/catch — в приватном режиме Safari
+      // или при заблокированных cookies он бросает SecurityError.
+      let token: string | null = null;
+      try {
+        token = localStorage.getItem('token');
+      } catch (err) {
+        console.warn('[init] localStorage unavailable:', err);
       }
 
       try {
-        const token = localStorage.getItem('token');
         if (token) {
           try {
             setLoadingStep('Проверяем сессию…');
@@ -86,21 +108,23 @@ export default function Home() {
               role: payload.role,
             });
             setLoading(false);
+            clearTimeout(bailTimer);
             return;
           } catch {
-            localStorage.removeItem('token');
+            try { localStorage.removeItem('token'); } catch {}
           }
         }
 
         if (!tg?.initData) {
           setError('Откройте приложение через Telegram');
           setLoading(false);
+          clearTimeout(bailTimer);
           return;
         }
 
         setLoadingStep('Авторизация через Telegram…');
-        tg.ready();
-        tg.expand();
+        try { tg.ready(); } catch {}
+        try { tg.expand(); } catch {}
 
         const res = await apiFetch<{ token: string; user: UserInfo }>(
           '/api/auth/login',
@@ -116,6 +140,7 @@ export default function Home() {
         setError(err instanceof Error ? err.message : 'Ошибка авторизации');
       } finally {
         setLoading(false);
+        clearTimeout(bailTimer);
       }
     }
   }, []);
