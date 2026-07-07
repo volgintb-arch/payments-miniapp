@@ -18,6 +18,8 @@ type UserInfo = {
 export default function Home() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingStep, setLoadingStep] = useState('Инициализация…');
+  const [showRetry, setShowRetry] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'create' | 'income' | 'list' | 'admin' | 'uncategorized'>('create');
   const [chatId, setChatId] = useState<string | null>(null);
@@ -39,12 +41,16 @@ export default function Home() {
     const tg = (window as any).Telegram?.WebApp;
     tg?.onEvent?.('themeChanged', applyTheme);
 
+    // Кнопка «Обновить» появится через 10 секунд, если авторизация ещё висит.
+    const retryTimer = setTimeout(() => setShowRetry(true), 10_000);
+
     // Даём время Telegram SDK загрузиться
     const timer = setTimeout(() => {
       init();
     }, 500);
     return () => {
       clearTimeout(timer);
+      clearTimeout(retryTimer);
       tg?.offEvent?.('themeChanged', applyTheme);
     };
 
@@ -70,6 +76,7 @@ export default function Home() {
         const token = localStorage.getItem('token');
         if (token) {
           try {
+            setLoadingStep('Проверяем сессию…');
             await apiFetch('/api/units');
             const payload = JSON.parse(atob(token.split('.')[1]));
             setUser({
@@ -91,6 +98,7 @@ export default function Home() {
           return;
         }
 
+        setLoadingStep('Авторизация через Telegram…');
         tg.ready();
         tg.expand();
 
@@ -114,18 +122,37 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg text-gray-500">Загрузка...</div>
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4 px-4">
+        <div className="text-lg text-gray-500">{loadingStep}</div>
+        {showRetry && (
+          <>
+            <div className="text-xs text-gray-400 text-center max-w-xs">
+              Что-то долго. Проверьте интернет и обновите страницу.
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+            >
+              Обновить
+            </button>
+          </>
+        )}
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
+      <div className="flex items-center justify-center min-h-screen px-4">
+        <div className="text-center max-w-sm">
           <div className="text-lg text-red-500 mb-2">Ошибка</div>
-          <div className="text-gray-600">{error}</div>
+          <div className="text-gray-600 mb-4">{error}</div>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+          >
+            Попробовать снова
+          </button>
         </div>
       </div>
     );
