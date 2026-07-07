@@ -109,7 +109,9 @@ export function AdminPending() {
         method: 'POST',
         body: JSON.stringify({ transactionIds: ids }),
       });
-      await load();
+      // Оптимистично убираем карточку из списка — без полного load(),
+      // чтобы не сбрасывать скролл.
+      setPayments((prev) => prev.filter((p) => p.id !== paymentId));
       setSelected((prev) => {
         const next = { ...prev };
         delete next[paymentId];
@@ -127,7 +129,7 @@ export function AdminPending() {
     setBusyId(paymentId);
     try {
       await apiFetch(`/api/admin/pending/${paymentId}`, { method: 'DELETE' });
-      await load();
+      setPayments((prev) => prev.filter((p) => p.id !== paymentId));
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Ошибка');
     } finally {
@@ -149,7 +151,7 @@ export function AdminPending() {
     setBusyId(incomeId);
     try {
       await apiFetch(`/api/admin/incomes/${incomeId}`, { method: 'POST' });
-      await load();
+      setIncomes((prev) => prev.filter((i) => i.id !== incomeId));
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Ошибка');
     } finally {
@@ -162,7 +164,7 @@ export function AdminPending() {
     setBusyId(incomeId);
     try {
       await apiFetch(`/api/admin/incomes/${incomeId}`, { method: 'DELETE' });
-      await load();
+      setIncomes((prev) => prev.filter((i) => i.id !== incomeId));
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Ошибка');
     } finally {

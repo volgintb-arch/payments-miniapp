@@ -125,8 +125,10 @@ export function AdminUncategorized() {
             tx={tx}
             onCancel={() => setOpenTxId(null)}
             onSuccess={() => {
+              // Оптимистично убираем карточку — без полного load(),
+              // чтобы скролл остался на месте.
+              setItems((prev) => prev.filter((t) => t.txId !== openTxId));
               setOpenTxId(null);
-              load();
             }}
           />
         );
