@@ -194,7 +194,7 @@ export default function Home() {
         </p>
       </header>
 
-      <nav className={`grid gap-1.5 mb-6 ${user.role === 'ADMIN' ? 'grid-cols-5' : 'grid-cols-3'}`}>
+      <nav className={`grid gap-1.5 mb-6 ${user.role === 'ADMIN' ? 'grid-cols-5' : 'grid-cols-4'}`}>
         <button
           onClick={() => setTab('create')}
           className={`py-2 rounded-lg text-xs font-medium transition-colors ${
@@ -237,18 +237,16 @@ export default function Home() {
             Проблемы
           </button>
         )}
-        {user.role === 'ADMIN' && (
-          <button
-            onClick={() => setTab('uncategorized')}
-            className={`py-2 rounded-lg text-xs font-medium transition-colors ${
-              tab === 'uncategorized'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Неопознанные
-          </button>
-        )}
+        <button
+          onClick={() => setTab('uncategorized')}
+          className={`py-2 rounded-lg text-xs font-medium transition-colors ${
+            tab === 'uncategorized'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Неопознанные
+        </button>
       </nav>
 
       {tab === 'create' && (
@@ -259,7 +257,7 @@ export default function Home() {
       )}
       {tab === 'list' && <PaymentList />}
       {tab === 'admin' && user.role === 'ADMIN' && <AdminPending />}
-      {tab === 'uncategorized' && user.role === 'ADMIN' && <AdminUncategorized />}
+      {tab === 'uncategorized' && <AdminUncategorized />}
     </main>
   );
 }

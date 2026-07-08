@@ -20,9 +20,11 @@ export async function POST(
   ctx: { params: Promise<{ txId: string }> },
 ) {
   const user = getAuthUser(request);
-  if (!user || user.role !== 'ADMIN') {
+  if (!user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  // Роль не ограничиваем: обычному сотруднику можно разнести свою покупку.
+  // Защита: проверка userUnit ниже блокирует разнос в чужой юнит.
 
   const txIdRaw = (await ctx.params).txId;
   const txId = Number(txIdRaw);
