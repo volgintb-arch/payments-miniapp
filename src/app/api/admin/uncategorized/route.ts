@@ -117,7 +117,10 @@ async function handleGet(request: NextRequest) {
     .filter(({ tx }) => !takenSet.has(tx.id))
     .map(({ baId, tx }) => {
       const ba = baById.get(baId);
-      const cardMatch = /\*+(\d{4})\b/.exec(tx.description || '');
+      // Маска карты идёт после 4-6 цифр BIN'а: «220445******2700».
+      // Без \d{4,6} впереди regexp жадно ловил «YANDEX*4121*GO» (это
+      // идентификатор мерчанта в имени терминала, а не карта).
+      const cardMatch = /\d{4,6}\*+(\d{4})\b/.exec(tx.description || '');
       return {
         txId: tx.id,
         amount: Math.abs(Number(tx.amount)),

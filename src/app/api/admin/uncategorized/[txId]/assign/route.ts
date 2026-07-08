@@ -91,7 +91,9 @@ export async function POST(
 
   // 5. cardNote вытаскиваем из маски карты в описании tx (если это карточная).
   const txDescForCard = typeof body.txDescription === 'string' ? body.txDescription : '';
-  const cardSuffixMatch = /\*+(\d{4})\b/.exec(txDescForCard);
+  // Маска карты — «220445******2700», requires BIN digits before the *'s.
+  // Без этого regexp ловит «YANDEX*4121*GO» — идентификатор мерчанта.
+  const cardSuffixMatch = /\d{4,6}\*+(\d{4})\b/.exec(txDescForCard);
   const cardNote = cardSuffixMatch ? cardSuffixMatch[1] : null;
 
   // 6. Собираем description для Adesk без дублирования префикса.
