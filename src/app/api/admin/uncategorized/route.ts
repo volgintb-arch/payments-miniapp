@@ -13,7 +13,7 @@ import { isCardTransaction } from '@/lib/retro-match';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 const DEFAULT_DAYS = 7;
-const MAX_ITEMS = 100;
+const MAX_ITEMS = 500;
 const CACHE_TTL_MS = 60_000;
 
 // Простой in-memory кэш: список неопознанных tx стоит на большом окне
@@ -113,8 +113,10 @@ async function handleGet(request: NextRequest) {
     taken.map((t) => t.adeskConfirmedTransactionId).filter(Boolean) as number[],
   );
 
-  const items = uncategorized
-    .filter(({ tx }) => !takenSet.has(tx.id))
+  const availableRaw = uncategorized.filter(({ tx }) => !takenSet.has(tx.id));
+  const totalAvailable = availableRaw.length;
+
+  const items = availableRaw
     .map(({ baId, tx }) => {
       const ba = baById.get(baId);
       // Маска карты идёт после 4-6 цифр BIN'а: «220445******2700».
@@ -146,7 +148,10 @@ async function handleGet(request: NextRequest) {
     })
     .slice(0, MAX_ITEMS);
 
-  const body = { items, days, total: items.length };
+  // total = сколько НАЙДЕНО неопознанных до отсечения limit'ом. items.length —
+  // сколько реально ушло в ответ. Если total > items.length, UI должен намекнуть
+  // «показано X из Y» и/или предложить расширить период.
+  const body = { items, days, total: totalAvailable, shown: items.length };
   cache.set(cacheKey, { at: Date.now(), body });
   return Response.json(body);
 }

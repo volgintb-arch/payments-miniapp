@@ -43,13 +43,16 @@ export function AdminUncategorized() {
   const [openTxId, setOpenTxId] = useState<number | null>(null);
   const [cardFilter, setCardFilter] = useState('');
 
+  const [total, setTotal] = useState(0);
+
   const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
       const url = `/api/admin/uncategorized?days=${days}${force ? '&nocache=1' : ''}`;
-      const res = await apiFetch<{ items: UncategorizedTx[]; days: number; total: number }>(url);
+      const res = await apiFetch<{ items: UncategorizedTx[]; days: number; total: number; shown: number }>(url);
       setItems(res.items);
+      setTotal(res.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
     } finally {
@@ -81,7 +84,12 @@ export function AdminUncategorized() {
         <div className="text-sm text-gray-600">
           Неопознанных: {filteredItems.length}
           {cardFilter && filteredItems.length !== items.length && (
-            <span className="text-xs text-gray-400"> / {items.length}</span>
+            <span className="text-xs text-gray-400"> из {items.length}</span>
+          )}
+          {!cardFilter && total > items.length && (
+            <span className="text-xs text-amber-600 ml-1">
+              (показано {items.length} из {total})
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -194,6 +202,7 @@ export function AdminUncategorized() {
               // Оптимистично убираем карточку — без полного load(),
               // чтобы скролл остался на месте.
               setItems((prev) => prev.filter((t) => t.txId !== openTxId));
+              setTotal((prev) => Math.max(0, prev - 1));
               setOpenTxId(null);
             }}
           />
