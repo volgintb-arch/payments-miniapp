@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/hooks/use-api';
 import { matchesSearch } from '@/lib/search';
 
@@ -10,6 +10,7 @@ type UncategorizedTx = {
   date: string; // "DD.MM.YYYY"
   description: string;
   isCard: boolean;
+  cardSuffix: string | null;
   bankAccount: {
     id: number;
     name: string;
@@ -40,6 +41,7 @@ export function AdminUncategorized() {
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(7);
   const [openTxId, setOpenTxId] = useState<number | null>(null);
+  const [cardFilter, setCardFilter] = useState('');
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
@@ -57,6 +59,19 @@ export function AdminUncategorized() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Уникальные cardSuffix из текущей выборки (для чипсов-подсказок).
+  const uniqueCardSuffixes = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of items) if (t.cardSuffix) set.add(t.cardSuffix);
+    return Array.from(set).sort();
+  }, [items]);
+
+  // Отфильтрованные по cardFilter (0-4 цифры, includes-совпадение).
+  const filteredItems = useMemo(() => {
+    if (!cardFilter) return items;
+    return items.filter((t) => t.cardSuffix?.includes(cardFilter));
+  }, [items, cardFilter]);
+
   if (loading) return <div className="text-sm text-gray-500 py-8 text-center">Загрузка...</div>;
   if (error) return <div className="text-sm text-red-500 py-8 text-center">{error}</div>;
 
@@ -64,7 +79,10 @@ export function AdminUncategorized() {
     <div className="space-y-3">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-gray-600">
-          Неопознанных: {items.length}
+          Неопознанных: {filteredItems.length}
+          {cardFilter && filteredItems.length !== items.length && (
+            <span className="text-xs text-gray-400"> / {items.length}</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-gray-500">Период:</label>
@@ -88,21 +106,70 @@ export function AdminUncategorized() {
         </div>
       </div>
 
-      {items.length === 0 && (
-        <div className="text-center py-8 text-sm text-gray-500">
-          Все транзакции разнесены 🎉
+      {/* Фильтр по последним 4 цифрам карты */}
+      <div className="flex items-center gap-2 mb-2">
+        <label className="text-xs text-gray-500 shrink-0">Карта:</label>
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="\d{4}"
+          maxLength={4}
+          value={cardFilter}
+          onChange={(e) => setCardFilter(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          placeholder="4 цифры"
+          className="text-xs border rounded px-2 py-1 bg-white w-24"
+        />
+        {cardFilter && (
+          <button
+            onClick={() => setCardFilter('')}
+            className="text-xs text-gray-400 hover:text-gray-600 px-1"
+            title="Сбросить"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      {/* Чипсы с найденными в выборке карт */}
+      {uniqueCardSuffixes.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {uniqueCardSuffixes.map((s) => (
+            <button
+              key={s}
+              onClick={() => setCardFilter((prev) => (prev === s ? '' : s))}
+              className={`text-xs px-2 py-0.5 rounded border ${
+                cardFilter === s
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              *{s}
+            </button>
+          ))}
         </div>
       )}
 
-      {items.map((tx) => (
+      {filteredItems.length === 0 && (
+        <div className="text-center py-8 text-sm text-gray-500">
+          {cardFilter
+            ? `По карте *${cardFilter} ничего не найдено`
+            : 'Все транзакции разнесены 🎉'}
+        </div>
+      )}
+
+      {filteredItems.map((tx) => (
         <div key={tx.txId} className="border rounded-lg p-3 bg-white text-sm">
           <div className="flex items-baseline justify-between mb-1">
             <div className="text-lg font-semibold">{tx.amount.toLocaleString('ru-RU')} ₽</div>
             <div className="text-xs text-gray-500">{tx.date}</div>
           </div>
-          <div className="text-xs text-gray-600 mb-2">
-            {tx.bankAccount.name}
-            {tx.bankAccount.legalEntity ? ` · ${tx.bankAccount.legalEntity}` : ''}
+          <div className="text-xs text-gray-600 mb-2 flex items-center gap-2 flex-wrap">
+            <span>{tx.bankAccount.name}{tx.bankAccount.legalEntity ? ` · ${tx.bankAccount.legalEntity}` : ''}</span>
+            {tx.cardSuffix && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
+                *{tx.cardSuffix}
+              </span>
+            )}
           </div>
           <div className="text-xs text-gray-700 mb-3 break-words">
             {tx.description || '—'}

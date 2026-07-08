@@ -117,12 +117,15 @@ async function handleGet(request: NextRequest) {
     .filter(({ tx }) => !takenSet.has(tx.id))
     .map(({ baId, tx }) => {
       const ba = baById.get(baId);
+      const cardMatch = /\*+(\d{4})\b/.exec(tx.description || '');
       return {
         txId: tx.id,
         amount: Math.abs(Number(tx.amount)),
         date: tx.date, // "DD.MM.YYYY"
         description: tx.description || '',
         isCard: isCardTransaction(tx.description),
+        // 4 цифры карты из маски «220445****NNNN» (для фильтра в UI)
+        cardSuffix: cardMatch ? cardMatch[1] : null,
         bankAccount: {
           id: baId,
           name: ba?.name ?? '—',
