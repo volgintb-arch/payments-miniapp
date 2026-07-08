@@ -116,6 +116,48 @@ async function handleGet(request: NextRequest) {
   const availableRaw = uncategorized.filter(({ tx }) => !takenSet.has(tx.id));
   const totalAvailable = availableRaw.length;
 
+  // Ищем «висящие» платежи сотрудников (PENDING_RETRO/NEEDS_REVIEW/ORPHANED)
+  // за последние 45 дней. По каждой tx потом ищем среди них того, у кого
+  // совпадают: сумма + cardNote (4 цифры) + дата в ±4 дня от tx. Если такой
+  // Payment есть, помечаем tx маркером «уже подан» — фронт покажет warning
+  // и потребует подтверждение перед разносом, чтобы не плодить дубли.
+  const hangingCutoff = new Date(Date.now() - 45 * 86_400_000);
+  const hangingPayments = await prisma.payment.findMany({
+    where: {
+      status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
+      paymentMethod: 'card',
+      createdAt: { gte: hangingCutoff },
+    },
+    select: {
+      id: true, amount: true, date: true, cardNote: true, description: true, status: true,
+      user: { select: { telegramUsername: true, firstName: true } },
+    },
+  });
+
+  function findHangingFor(txDateStr: string, txAmount: number, cardSuffix: string | null) {
+    // txDateStr — "DD.MM.YYYY"
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(txDateStr);
+    if (!m) return null;
+    const txDate = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    const lo = txDate.getTime() - 4 * 86_400_000;
+    const hi = txDate.getTime() + 4 * 86_400_000;
+    for (const p of hangingPayments) {
+      if (Math.abs(Number(p.amount) - txAmount) >= 0.01) continue;
+      if (cardSuffix && (p.cardNote || '').trim() !== cardSuffix) continue;
+      const t = p.date.getTime();
+      if (t < lo || t > hi) continue;
+      const tag = p.user.telegramUsername ? `@${p.user.telegramUsername}` : p.user.firstName;
+      return {
+        id: p.id,
+        userTag: tag,
+        date: p.date.toISOString().slice(0, 10),
+        description: p.description,
+        status: p.status,
+      };
+    }
+    return null;
+  }
+
   const items = availableRaw
     .map(({ baId, tx }) => {
       const ba = baById.get(baId);
@@ -123,19 +165,22 @@ async function handleGet(request: NextRequest) {
       // Без \d{4,6} впереди regexp жадно ловил «YANDEX*4121*GO» (это
       // идентификатор мерчанта в имени терминала, а не карта).
       const cardMatch = /\d{4,6}\*+(\d{4})\b/.exec(tx.description || '');
+      const cardSuffix = cardMatch ? cardMatch[1] : null;
+      const amountAbs = Math.abs(Number(tx.amount));
       return {
         txId: tx.id,
-        amount: Math.abs(Number(tx.amount)),
+        amount: amountAbs,
         date: tx.date, // "DD.MM.YYYY"
         description: tx.description || '',
         isCard: isCardTransaction(tx.description),
         // 4 цифры карты из маски «220445****NNNN» (для фильтра в UI)
-        cardSuffix: cardMatch ? cardMatch[1] : null,
+        cardSuffix,
         bankAccount: {
           id: baId,
           name: ba?.name ?? '—',
           legalEntity: ba?.legalEntity?.name ?? null,
         },
+        pendingPayment: findHangingFor(tx.date, amountAbs, cardSuffix),
       };
     })
     .sort((a, b) => {

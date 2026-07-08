@@ -16,6 +16,13 @@ type UncategorizedTx = {
     name: string;
     legalEntity: string | null;
   };
+  pendingPayment: {
+    id: string;
+    userTag: string;
+    date: string; // "YYYY-MM-DD"
+    description: string | null;
+    status: 'PENDING_RETRO' | 'NEEDS_REVIEW' | 'ORPHANED';
+  } | null;
 };
 
 type Unit = { id: number; name: string };
@@ -182,11 +189,28 @@ export function AdminUncategorized() {
           <div className="text-xs text-gray-700 mb-3 break-words">
             {tx.description || '—'}
           </div>
+          {tx.pendingPayment && (
+            <div className="mb-2 p-2 border border-amber-300 bg-amber-50 rounded text-xs text-amber-800">
+              ⚠️ Уже подан платёж: <b>{tx.pendingPayment.userTag}</b>
+              {tx.pendingPayment.description ? ` · «${tx.pendingPayment.description}»` : ''}
+              {` · ${tx.pendingPayment.date} · статус ${tx.pendingPayment.status}`}
+            </div>
+          )}
           <button
-            onClick={() => setOpenTxId(tx.txId)}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+            onClick={() => {
+              if (tx.pendingPayment) {
+                const msg = `Этот платёж уже подал ${tx.pendingPayment.userTag} (${tx.pendingPayment.date}, «${tx.pendingPayment.description ?? '—'}», статус ${tx.pendingPayment.status}).\n\nРазнести всё равно? Это создаст ДУБЛЬ, придётся потом удалять hanging-платёж вручную.`;
+                if (!confirm(msg)) return;
+              }
+              setOpenTxId(tx.txId);
+            }}
+            className={`w-full py-2 rounded-lg text-sm font-medium text-white ${
+              tx.pendingPayment
+                ? 'bg-amber-600 hover:bg-amber-700'
+                : 'bg-blue-600 hover:bg-blue-700'
+            }`}
           >
-            Разнести
+            {tx.pendingPayment ? 'Разнести (есть подача)' : 'Разнести'}
           </button>
         </div>
       ))}
