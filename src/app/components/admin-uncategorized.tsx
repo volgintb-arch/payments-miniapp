@@ -59,7 +59,7 @@ function newSplitId() {
   return Math.random().toString(36).slice(2, 11);
 }
 
-export function AdminUncategorized() {
+export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) {
   const [items, setItems] = useState<UncategorizedTx[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -238,6 +238,7 @@ export function AdminUncategorized() {
         return (
           <AssignModal
             tx={tx}
+            chatId={chatId ?? null}
             onCancel={() => setOpenTxId(null)}
             onSuccess={() => {
               // Оптимистично убираем карточку — без полного load(),
@@ -255,10 +256,12 @@ export function AdminUncategorized() {
 
 function AssignModal({
   tx,
+  chatId,
   onCancel,
   onSuccess,
 }: {
   tx: UncategorizedTx;
+  chatId: string | null;
   onCancel: () => void;
   onSuccess: () => void;
 }) {
@@ -429,6 +432,7 @@ function AssignModal({
           dateIso,
           amount: tx.amount,
           txDescription: tx.description,
+          chatId: chatId || undefined,
           ...(hasSplits
             ? {
                 splits: splits.map((s) => ({

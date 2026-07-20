@@ -257,7 +257,7 @@ export default function Home() {
       )}
       {tab === 'list' && <PaymentList />}
       {tab === 'admin' && user.role === 'ADMIN' && <AdminPending />}
-      {tab === 'uncategorized' && <AdminUncategorized />}
+      {tab === 'uncategorized' && <AdminUncategorized chatId={chatId} />}
     </main>
   );
 }

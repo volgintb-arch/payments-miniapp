@@ -19,6 +19,13 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
 import { getAuthUser, badRequest } from '@/lib/api-helpers';
+import { sendToGroup } from '@/lib/telegram';
+
+function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
+  if (u.telegramUsername) return `@${u.telegramUsername}`;
+  const name = `${u.firstName} ${u.lastName ?? ''}`.trim();
+  return name || 'Без имени';
+}
 
 type SplitInput = {
   unitId: number;
@@ -226,6 +233,72 @@ export async function POST(
       { status: 502 },
     );
   }
+
+  // 8. Telegram-уведомление в чат — в том же формате, что и обычная подача
+  // «Расход»/POST /api/payments. Собираем текст, потом сохраняем в Payment
+  // tgChatId/tgMessageId для будущих правок (edit-message).
+  const chatIdParam = typeof body.chatId === 'string' ? body.chatId : undefined;
+
+  const unit = await prisma.unit.findUnique({ where: { id: unitId } });
+  const category = await prisma.categoryCache.findUnique({ where: { adeskId: adeskCategoryId } });
+  const author = await prisma.user.findUnique({
+    where: { id: user.userId },
+    select: { telegramUsername: true, firstName: true, lastName: true },
+  });
+  const tag = author ? authorTag(author) : '';
+
+  let tgText: string;
+  if (hasSplits) {
+    const headerParts = [
+      unit?.name ?? 'Юнит',
+      `${amount.toLocaleString('ru-RU')} ₽`,
+      cardNote || 'Карта',
+      `Разделён на ${splits.length}`,
+      rawDescription,
+      tag,
+    ].filter(Boolean);
+    const header = headerParts.join(' / ');
+    const lines = await Promise.all(
+      splitsWithSnapshots.map(async (s) => {
+        const u = await prisma.unit.findUnique({ where: { id: s.unitId } });
+        const c = await prisma.categoryCache.findUnique({ where: { adeskId: s.adeskCategoryId } });
+        const row = [
+          u?.name ?? 'Юнит',
+          c?.name ?? 'Статья',
+          s.projectNameSnapshot || '',
+          `${s.amount.toLocaleString('ru-RU')} ₽`,
+          s.description || '',
+        ].filter(Boolean).join(' / ');
+        return `  • ${row}`;
+      }),
+    );
+    tgText = [header, ...lines].join('\n');
+  } else {
+    const parts = [
+      unit?.name ?? 'Юнит',
+      category?.name ?? 'Статья',
+      projectNameSnapshot || '',
+      `${amount.toLocaleString('ru-RU')} ₽`,
+      cardNote || '',
+      rawDescription,
+      tag,
+    ].filter(Boolean);
+    tgText = parts.join(' / ');
+  }
+
+  // Fire-and-forget; ошибка в TG не должна ломать успешный ответ клиенту.
+  sendToGroup(tgText, chatIdParam).then((sent) => {
+    if (sent) {
+      prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          tgChatId: sent.chatId,
+          tgMessageId: sent.messageId,
+          tgThreadId: sent.threadId ?? null,
+        },
+      }).catch((e) => console.error('[uncategorized/assign] save tg msg id failed:', e));
+    }
+  }).catch(() => {});
 
   return Response.json({
     ok: true,
