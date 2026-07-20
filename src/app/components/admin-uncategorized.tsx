@@ -42,6 +42,23 @@ function flattenCategories(groups: CategoryGroup[]) {
   return out;
 }
 
+type Split = {
+  id: string;
+  unitId: number | null;
+  categoryId: number | null;
+  categoryName: string;
+  projectId: number | null;
+  projectName: string;
+  contractorId: number | null;
+  contractorName: string;
+  amount: string;
+  description: string;
+};
+
+function newSplitId() {
+  return Math.random().toString(36).slice(2, 11);
+}
+
 export function AdminUncategorized() {
   const [items, setItems] = useState<UncategorizedTx[]>([]);
   const [loading, setLoading] = useState(true);
@@ -270,6 +287,62 @@ function AssignModal({
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Сплиты — если массив не пустой, форма в режиме разбивки.
+  const [splits, setSplits] = useState<Split[]>([]);
+  const hasSplits = splits.length > 0;
+  const splitsTotal = splits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+  const splitsValid = hasSplits
+    && splits.every((s) =>
+      s.unitId && s.categoryId && s.projectId && s.description.trim() && parseFloat(s.amount) > 0)
+    && Math.abs(splitsTotal - tx.amount) < 0.01;
+
+  function startSplitting() {
+    const first: Split = {
+      id: newSplitId(),
+      unitId, categoryId, categoryName,
+      projectId, projectName,
+      contractorId, contractorName,
+      amount: String(tx.amount),
+      description: '',
+    };
+    const second: Split = {
+      id: newSplitId(),
+      unitId: null, categoryId: null, categoryName: '',
+      projectId: null, projectName: '',
+      contractorId: null, contractorName: '',
+      amount: '',
+      description: '',
+    };
+    setSplits([first, second]);
+  }
+  function addSplit() {
+    setSplits((prev) => [...prev, {
+      id: newSplitId(),
+      unitId: null, categoryId: null, categoryName: '',
+      projectId: null, projectName: '',
+      contractorId: null, contractorName: '',
+      amount: '', description: '',
+    }]);
+  }
+  function removeSplit(id: string) {
+    const next = splits.filter((s) => s.id !== id);
+    if (next.length <= 1) {
+      if (next.length === 1) {
+        const only = next[0];
+        setUnitId(only.unitId);
+        setCategoryId(only.categoryId); setCategoryName(only.categoryName);
+        setProjectId(only.projectId); setProjectName(only.projectName);
+        setContractorId(only.contractorId); setContractorName(only.contractorName);
+      }
+      setSplits([]);
+    } else {
+      setSplits(next);
+    }
+  }
+  function updateSplit(id: string, patch: Partial<Split>) {
+    setSplits((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  }
+
   useEffect(() => {
     apiFetch<{ units: Unit[] }>('/api/units').then((res) => {
       setUnits(res.units);
@@ -326,13 +399,20 @@ function AssignModal({
 
   async function submit() {
     setErr(null);
-    if (!unitId || !categoryId || !projectId) {
-      setErr('Заполните юнит, статью и проект');
+    if (!description.trim()) {
+      setErr('Введите описание платежа');
       return;
     }
-    if (!description.trim()) {
-      setErr('Введите описание');
-      return;
+    if (hasSplits) {
+      if (!splitsValid) {
+        setErr(`Каждый сплит должен содержать юнит, статью, проект, описание и сумму. Сумма (${splitsTotal.toFixed(2)}) должна равняться сумме транзакции (${tx.amount.toFixed(2)}).`);
+        return;
+      }
+    } else {
+      if (!unitId || !categoryId || !projectId) {
+        setErr('Заполните юнит, статью и проект');
+        return;
+      }
     }
 
     // DD.MM.YYYY → YYYY-MM-DD (для сохранения в Payment.date)
@@ -344,15 +424,28 @@ function AssignModal({
       await apiFetch(`/api/admin/uncategorized/${tx.txId}/assign`, {
         method: 'POST',
         body: JSON.stringify({
-          unitId,
-          adeskCategoryId: categoryId,
-          adeskProjectId: projectId,
-          adeskContractorId: contractorId || undefined,
           description: description.trim(),
           bankAccountId: tx.bankAccount.id,
           dateIso,
           amount: tx.amount,
           txDescription: tx.description,
+          ...(hasSplits
+            ? {
+                splits: splits.map((s) => ({
+                  unitId: s.unitId,
+                  adeskCategoryId: s.categoryId,
+                  adeskProjectId: s.projectId,
+                  adeskContractorId: s.contractorId || undefined,
+                  amount: parseFloat(s.amount),
+                  description: s.description,
+                })),
+              }
+            : {
+                unitId,
+                adeskCategoryId: categoryId,
+                adeskProjectId: projectId,
+                adeskContractorId: contractorId || undefined,
+              }),
         }),
       });
       onSuccess();
@@ -378,137 +471,175 @@ function AssignModal({
       <button onClick={onCancel} className="text-gray-400 text-xl leading-none px-2">✕</button>
     </div>
     <div className="px-4 py-3 overflow-y-auto flex-1 space-y-2">
-      <select
-        value={unitId ?? ''}
-        onChange={(e) => setUnitId(Number(e.target.value) || null)}
-        className={inputClass}
-      >
-        <option value="">Юнит</option>
-        {units.map((u) => (
-          <option key={u.id} value={u.id}>{u.name}</option>
-        ))}
-      </select>
-
-      <div ref={categoryRef}>
-        {categoryId ? (
-          <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
-            <span className="text-sm flex-1">{categoryName}</span>
-            <button
-              type="button"
-              onClick={() => { setCategoryId(null); setCategoryName(''); }}
-              className="text-xs text-red-500"
-            >✕</button>
-          </div>
-        ) : (
-          <div className="relative">
-            <input
-              type="text"
-              value={categoryQuery}
-              disabled={!unitId}
-              onChange={(e) => { setCategoryQuery(e.target.value); setShowCategoryDropdown(true); }}
-              onFocus={() => setShowCategoryDropdown(true)}
-              className={inputClass}
-              placeholder="Статья"
-            />
-            {showCategoryDropdown && filteredCategories.length > 0 && (
-              <div className={dropdownClass}>
-                {filteredCategories.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => {
-                      setCategoryId(c.id); setCategoryName(c.name);
-                      setShowCategoryDropdown(false); setCategoryQuery('');
-                    }}
-                    className={dropdownItemClass}
-                  >
-                    <div>{c.name}</div>
-                    <div className="text-xs text-gray-400">{c.groupName}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div ref={projectRef}>
-        {projectId ? (
-          <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
-            <span className="text-sm flex-1">{projectName}</span>
-            <button
-              type="button"
-              onClick={() => { setProjectId(null); setProjectName(''); }}
-              className="text-xs text-red-500"
-            >✕</button>
-          </div>
-        ) : (
-          <div className="relative">
-            <input
-              type="text"
-              value={projectQuery}
-              disabled={!unitId}
-              onChange={(e) => { setProjectQuery(e.target.value); setShowProjectDropdown(true); }}
-              onFocus={() => setShowProjectDropdown(true)}
-              className={inputClass}
-              placeholder="Проект"
-            />
-            {showProjectDropdown && projects.length > 0 && (
-              <div className={dropdownClass}>
-                {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      setProjectId(p.id); setProjectName(p.name);
-                      setShowProjectDropdown(false); setProjectQuery('');
-                    }}
-                    className={dropdownItemClass}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {contractorId ? (
-        <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
-          <span className="text-sm flex-1">{contractorName}</span>
-          <button
-            type="button"
-            onClick={() => { setContractorId(null); setContractorName(''); }}
-            className="text-xs text-red-500"
-          >✕</button>
-        </div>
-      ) : (
-        <div className="relative">
-          <input
-            type="text"
-            value={contractorQuery}
-            onChange={(e) => setContractorQuery(e.target.value)}
+      {!hasSplits ? (
+        <>
+          <select
+            value={unitId ?? ''}
+            onChange={(e) => setUnitId(Number(e.target.value) || null)}
             className={inputClass}
-            placeholder="Контрагент (опц.)"
-          />
-          {contractors.length > 0 && (
-            <div className={dropdownClass}>
-              {contractors.map((c) => (
+          >
+            <option value="">Юнит</option>
+            {units.map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+
+          <div ref={categoryRef}>
+            {categoryId ? (
+              <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
+                <span className="text-sm flex-1">{categoryName}</span>
                 <button
-                  key={c.id}
                   type="button"
-                  onClick={() => {
-                    setContractorId(c.id); setContractorName(c.name);
-                    setContractors([]); setContractorQuery('');
-                  }}
-                  className={dropdownItemClass}
-                >
-                  {c.name}
-                </button>
-              ))}
+                  onClick={() => { setCategoryId(null); setCategoryName(''); }}
+                  className="text-xs text-red-500"
+                >✕</button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={categoryQuery}
+                  disabled={!unitId}
+                  onChange={(e) => { setCategoryQuery(e.target.value); setShowCategoryDropdown(true); }}
+                  onFocus={() => setShowCategoryDropdown(true)}
+                  className={inputClass}
+                  placeholder="Статья"
+                />
+                {showCategoryDropdown && filteredCategories.length > 0 && (
+                  <div className={dropdownClass}>
+                    {filteredCategories.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setCategoryId(c.id); setCategoryName(c.name);
+                          setShowCategoryDropdown(false); setCategoryQuery('');
+                        }}
+                        className={dropdownItemClass}
+                      >
+                        <div>{c.name}</div>
+                        <div className="text-xs text-gray-400">{c.groupName}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div ref={projectRef}>
+            {projectId ? (
+              <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
+                <span className="text-sm flex-1">{projectName}</span>
+                <button
+                  type="button"
+                  onClick={() => { setProjectId(null); setProjectName(''); }}
+                  className="text-xs text-red-500"
+                >✕</button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={projectQuery}
+                  disabled={!unitId}
+                  onChange={(e) => { setProjectQuery(e.target.value); setShowProjectDropdown(true); }}
+                  onFocus={() => setShowProjectDropdown(true)}
+                  className={inputClass}
+                  placeholder="Проект"
+                />
+                {showProjectDropdown && projects.length > 0 && (
+                  <div className={dropdownClass}>
+                    {projects.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setProjectId(p.id); setProjectName(p.name);
+                          setShowProjectDropdown(false); setProjectQuery('');
+                        }}
+                        className={dropdownItemClass}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {contractorId ? (
+            <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
+              <span className="text-sm flex-1">{contractorName}</span>
+              <button
+                type="button"
+                onClick={() => { setContractorId(null); setContractorName(''); }}
+                className="text-xs text-red-500"
+              >✕</button>
+            </div>
+          ) : (
+            <div className="relative">
+              <input
+                type="text"
+                value={contractorQuery}
+                onChange={(e) => setContractorQuery(e.target.value)}
+                className={inputClass}
+                placeholder="Контрагент (опц.)"
+              />
+              {contractors.length > 0 && (
+                <div className={dropdownClass}>
+                  {contractors.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setContractorId(c.id); setContractorName(c.name);
+                        setContractors([]); setContractorQuery('');
+                      }}
+                      className={dropdownItemClass}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={startSplitting}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            ＋ Разделить на несколько частей
+          </button>
+        </>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium">Разбивка</label>
+            <div className={`text-xs ${Math.abs(splitsTotal - tx.amount) < 0.01 ? 'text-green-600' : 'text-red-500'}`}>
+              {splitsTotal.toLocaleString('ru-RU')} / {tx.amount.toLocaleString('ru-RU')} ₽
+            </div>
+          </div>
+          {splits.map((s, idx) => (
+            <SplitRow
+              key={s.id}
+              index={idx}
+              split={s}
+              units={units}
+              onChange={(patch) => updateSplit(s.id, patch)}
+              onRemove={() => removeSplit(s.id)}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={addSplit}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            ＋ Добавить часть
+          </button>
         </div>
       )}
 
@@ -517,7 +648,7 @@ function AssignModal({
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         className={inputClass}
-        placeholder="Описание"
+        placeholder="Описание платежа (общее)"
       />
 
       {err && <div className="text-xs text-red-500">{err}</div>}
@@ -538,6 +669,272 @@ function AssignModal({
       </button>
     </div>
     </div>
+    </div>
+  );
+}
+
+// Отдельная строка сплита — каждая загружает свои категории/проекты/контрагентов
+// по выбранному в ней юниту (аналог SplitRow в payment-form.tsx).
+function SplitRow({
+  index,
+  split,
+  units,
+  onChange,
+  onRemove,
+}: {
+  index: number;
+  split: Split;
+  units: Unit[];
+  onChange: (patch: Partial<Split>) => void;
+  onRemove: () => void;
+}) {
+  const [groups, setGroups] = useState<CategoryGroup[]>([]);
+  const [categoryQuery, setCategoryQuery] = useState('');
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const categoryRef = useRef<HTMLDivElement>(null);
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectQuery, setProjectQuery] = useState('');
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const projectRef = useRef<HTMLDivElement>(null);
+
+  const [contractorQuery, setContractorQuery] = useState('');
+  const [contractors, setContractors] = useState<Contractor[]>([]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (categoryRef.current && !categoryRef.current.contains(e.target as Node)) {
+        setShowCategoryDropdown(false);
+      }
+      if (projectRef.current && !projectRef.current.contains(e.target as Node)) {
+        setShowProjectDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  useEffect(() => {
+    if (!split.unitId) { setGroups([]); return; }
+    apiFetch<{ groups: CategoryGroup[] }>(`/api/categories?unitId=${split.unitId}`).then(
+      (res) => setGroups(res.groups),
+    );
+  }, [split.unitId]);
+
+  useEffect(() => {
+    if (!split.unitId) { setProjects([]); return; }
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ unitId: String(split.unitId) });
+      if (projectQuery.length >= 2) params.set('q', projectQuery);
+      apiFetch<{ projects: Project[] }>(`/api/projects?${params}`).then(
+        (res) => setProjects(res.projects),
+      );
+    }, projectQuery.length >= 2 ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [split.unitId, projectQuery]);
+
+  useEffect(() => {
+    if (contractorQuery.length < 2) { setContractors([]); return; }
+    const timer = setTimeout(() => {
+      apiFetch<{ contractors: Contractor[] }>(
+        `/api/contractors?q=${encodeURIComponent(contractorQuery)}`,
+      ).then((res) => setContractors(res.contractors));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [contractorQuery]);
+
+  const allCategories = flattenCategories(groups);
+  const filteredCategories = categoryQuery.length >= 1
+    ? allCategories.filter((c) => matchesSearch(c.name, categoryQuery))
+    : allCategories;
+
+  const inputClass = 'w-full border rounded-lg px-2 py-1.5 text-sm bg-white';
+  const dropdownClass = 'absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto';
+  const dropdownItemClass = 'w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0';
+
+  return (
+    <div className="border rounded-lg p-3 space-y-2 bg-gray-50">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-500">Часть #{index + 1}</span>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-xs text-red-500 hover:underline"
+        >
+          Убрать
+        </button>
+      </div>
+
+      <select
+        value={split.unitId ?? ''}
+        onChange={(e) => onChange({
+          unitId: Number(e.target.value) || null,
+          categoryId: null, categoryName: '',
+          projectId: null, projectName: '',
+        })}
+        className={inputClass}
+      >
+        <option value="">Юнит</option>
+        {units.map((u) => (
+          <option key={u.id} value={u.id}>{u.name}</option>
+        ))}
+      </select>
+
+      <div ref={categoryRef}>
+        {split.categoryId ? (
+          <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
+            <span className="text-sm flex-1">{split.categoryName}</span>
+            <button
+              type="button"
+              onClick={() => onChange({ categoryId: null, categoryName: '' })}
+              className="text-xs text-red-500"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              type="text"
+              value={categoryQuery}
+              disabled={!split.unitId}
+              onChange={(e) => {
+                setCategoryQuery(e.target.value);
+                setShowCategoryDropdown(true);
+              }}
+              onFocus={() => setShowCategoryDropdown(true)}
+              className={inputClass}
+              placeholder="Статья"
+            />
+            {showCategoryDropdown && filteredCategories.length > 0 && (
+              <div className={dropdownClass}>
+                {filteredCategories.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      onChange({ categoryId: c.id, categoryName: c.name });
+                      setShowCategoryDropdown(false);
+                      setCategoryQuery('');
+                    }}
+                    className={dropdownItemClass}
+                  >
+                    <div>{c.name}</div>
+                    <div className="text-xs text-gray-400">{c.groupName}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div ref={projectRef}>
+        {split.projectId ? (
+          <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
+            <span className="text-sm flex-1">{split.projectName}</span>
+            <button
+              type="button"
+              onClick={() => onChange({ projectId: null, projectName: '' })}
+              className="text-xs text-red-500"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              type="text"
+              value={projectQuery}
+              disabled={!split.unitId}
+              onChange={(e) => {
+                setProjectQuery(e.target.value);
+                setShowProjectDropdown(true);
+              }}
+              onFocus={() => setShowProjectDropdown(true)}
+              className={inputClass}
+              placeholder="Проект"
+            />
+            {showProjectDropdown && projects.length > 0 && (
+              <div className={dropdownClass}>
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      onChange({ projectId: p.id, projectName: p.name });
+                      setShowProjectDropdown(false);
+                      setProjectQuery('');
+                    }}
+                    className={dropdownItemClass}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {split.contractorId ? (
+        <div className="flex items-center gap-2 border rounded-lg px-2 py-1.5 bg-white">
+          <span className="text-sm flex-1">{split.contractorName}</span>
+          <button
+            type="button"
+            onClick={() => onChange({ contractorId: null, contractorName: '' })}
+            className="text-xs text-red-500"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          <input
+            type="text"
+            value={contractorQuery}
+            onChange={(e) => setContractorQuery(e.target.value)}
+            className={inputClass}
+            placeholder="Контрагент (опц.)"
+          />
+          {contractors.length > 0 && (
+            <div className={dropdownClass}>
+              {contractors.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    onChange({ contractorId: c.id, contractorName: c.name });
+                    setContractors([]);
+                    setContractorQuery('');
+                  }}
+                  className={dropdownItemClass}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <input
+        type="text"
+        value={split.description}
+        onChange={(e) => onChange({ description: e.target.value })}
+        className={inputClass}
+        placeholder="Описание"
+      />
+
+      <input
+        type="number"
+        step="0.01"
+        min="0.01"
+        value={split.amount}
+        onChange={(e) => onChange({ amount: e.target.value })}
+        className={inputClass}
+        placeholder="Сумма части"
+      />
     </div>
   );
 }

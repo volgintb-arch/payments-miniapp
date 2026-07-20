@@ -1,19 +1,33 @@
 // POST /api/admin/uncategorized/:txId/assign
-// Body: { unitId, adeskCategoryId, adeskProjectId?, adeskContractorId?, description? }
+// Body: {
+//   description, bankAccountId, dateIso, amount, txDescription,
+//   // Простой режим:
+//   unitId, adeskCategoryId, adeskProjectId?, adeskContractorId?,
+//   // ИЛИ сплит-режим:
+//   splits: [{ unitId, adeskCategoryId, adeskProjectId, adeskContractorId?, amount, description }, ...]
+// }
 //
 // Разносит «неопознанную» Adesk-транзакцию:
 //   - создаёт Payment в БД (status=MATCHED, adeskConfirmedTransactionId=txId)
-//   - обновляет Adesk-tx: проставляет категорию/проект/контрагента;
-//     описание prepend'им нашим (без дублирования префикса).
+//   - обновляет Adesk-tx: проставляет категорию/проект/контрагента ИЛИ
+//     parts[] в сплит-режиме; описание prepend'им нашим (без дублирования).
 //
 // Проверяем перед записью, что tx ещё не привязан к другому Payment.
-// Доступ: JWT с ролью ADMIN (без CRON_SECRET — здесь важен реальный
-// админ-пользователь, чтобы Payment.userId был осмысленный).
+// Доступ: любой авторизованный (JWT), проверка userUnit — по каждому юниту.
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
 import { getAuthUser, badRequest } from '@/lib/api-helpers';
+
+type SplitInput = {
+  unitId: number;
+  adeskCategoryId: number;
+  adeskProjectId?: number | null;
+  adeskContractorId?: number | null;
+  amount: number;
+  description?: string;
+};
 
 export async function POST(
   request: NextRequest,
@@ -23,8 +37,6 @@ export async function POST(
   if (!user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  // Роль не ограничиваем: обычному сотруднику можно разнести свою покупку.
-  // Защита: проверка userUnit ниже блокирует разнос в чужой юнит.
 
   const txIdRaw = (await ctx.params).txId;
   const txId = Number(txIdRaw);
@@ -33,20 +45,61 @@ export async function POST(
   const body = await request.json().catch(() => null);
   if (!body) return badRequest('Invalid JSON');
 
-  const unitId = Number(body.unitId);
-  const adeskCategoryId = Number(body.adeskCategoryId);
-  const adeskProjectId = body.adeskProjectId ? Number(body.adeskProjectId) : null;
-  const adeskContractorId = body.adeskContractorId ? Number(body.adeskContractorId) : null;
   const rawDescription = typeof body.description === 'string' ? body.description.trim() : '';
+  if (!rawDescription) return badRequest('description обязателен');
 
-  if (!unitId || !adeskCategoryId) {
-    return badRequest('unitId и adeskCategoryId обязательны');
-  }
-  if (!rawDescription) {
-    return badRequest('description обязателен');
+  const bankAccountId = Number(body.bankAccountId);
+  const dateIso = typeof body.dateIso === 'string' ? body.dateIso : null;
+  const amount = Number(body.amount);
+  if (!bankAccountId || !dateIso || !amount) {
+    return badRequest('bankAccountId, dateIso, amount обязательны (контекст tx)');
   }
 
-  // 1. Ещё не занята? (мог другой админ разнести параллельно)
+  // Нормализуем сплиты.
+  const splits: SplitInput[] = Array.isArray(body.splits) && body.splits.length > 0
+    ? body.splits.map((s: SplitInput) => ({
+        unitId: Number(s.unitId),
+        adeskCategoryId: Number(s.adeskCategoryId),
+        adeskProjectId: s.adeskProjectId ? Number(s.adeskProjectId) : null,
+        adeskContractorId: s.adeskContractorId ? Number(s.adeskContractorId) : null,
+        amount: Number(s.amount),
+        description: s.description || undefined,
+      }))
+    : [];
+  const hasSplits = splits.length > 0;
+
+  let unitId = 0;
+  let adeskCategoryId = 0;
+  let adeskProjectId: number | null = null;
+  let adeskContractorId: number | null = null;
+
+  if (hasSplits) {
+    for (const s of splits) {
+      if (!s.unitId || !s.adeskCategoryId || !s.adeskProjectId || !s.amount
+        || !s.description || !String(s.description).trim()) {
+        return badRequest('Каждый сплит должен содержать юнит, статью, проект, описание и сумму');
+      }
+    }
+    const total = splits.reduce((sum, s) => sum + s.amount, 0);
+    if (Math.abs(total - amount) >= 0.01) {
+      return badRequest(`Сумма сплитов (${total}) не равна сумме транзакции (${amount})`);
+    }
+    // Primary-поля Payment'а — из первого сплита (как в /api/payments).
+    unitId = splits[0].unitId;
+    adeskCategoryId = splits[0].adeskCategoryId;
+    adeskProjectId = splits[0].adeskProjectId ?? null;
+    adeskContractorId = splits[0].adeskContractorId ?? null;
+  } else {
+    unitId = Number(body.unitId);
+    adeskCategoryId = Number(body.adeskCategoryId);
+    adeskProjectId = body.adeskProjectId ? Number(body.adeskProjectId) : null;
+    adeskContractorId = body.adeskContractorId ? Number(body.adeskContractorId) : null;
+    if (!unitId || !adeskCategoryId) {
+      return badRequest('unitId и adeskCategoryId обязательны');
+    }
+  }
+
+  // 1. Ещё не занята другим Payment?
   const already = await prisma.payment.findFirst({
     where: { adeskConfirmedTransactionId: txId },
     select: { id: true, userId: true },
@@ -58,47 +111,47 @@ export async function POST(
     );
   }
 
-  // 2. Достаём tx из Adesk: сумма/дата/описание/маска карты. Adesk не даёт
-  // GET одиночной tx удобно, но listTransactions по банк-счёту с diapason
-  // равным дню tx — избыточно. Проще запросить через bank_accounts всех
-  // и выбрать — но это дорого. Поэтому клиент шлёт amount/date/bankAccountId
-  // как контекст. Здесь мы всё-таки перезапрашиваем tx одним вызовом,
-  // чтобы гарантировать что она существует и не разнесена в Adesk.
-  // Оптимизация — принять эти поля от клиента, но тогда клиент может
-  // передать что угодно; для консистентности берём из body контекст.
-  const bankAccountId = Number(body.bankAccountId);
-  const dateIso = typeof body.dateIso === 'string' ? body.dateIso : null;
-  const amount = Number(body.amount);
-  if (!bankAccountId || !dateIso || !amount) {
-    return badRequest('bankAccountId, dateIso, amount обязательны (контекст tx)');
-  }
-
-  // 3. Проверяем доступ пользователя к юниту.
-  const access = await prisma.userUnit.findFirst({
-    where: { userId: user.userId, unitId },
+  // 2. Проверяем доступ пользователя ко ВСЕМ затронутым юнитам.
+  const unitIds = Array.from(new Set(hasSplits ? splits.map((s) => s.unitId) : [unitId]));
+  const accessible = await prisma.userUnit.findMany({
+    where: { userId: user.userId, unitId: { in: unitIds } },
+    select: { unitId: true },
   });
-  if (!access) {
-    return Response.json({ error: 'No access to unit' }, { status: 403 });
+  if (accessible.length !== unitIds.length) {
+    return Response.json(
+      { error: 'No access to one or more units' },
+      { status: 403 },
+    );
   }
 
-  // 4. Снэпшоты имён (для карточки в мини-аппе).
-  const [projectCache, contractorCache] = await Promise.all([
-    adeskProjectId
-      ? prisma.projectCache.findUnique({ where: { adeskId: adeskProjectId } })
-      : Promise.resolve(null),
-    adeskContractorId
-      ? prisma.contractorCache.findUnique({ where: { adeskId: adeskContractorId } })
-      : Promise.resolve(null),
-  ]);
+  // 3. Снэпшоты имён.
+  async function getContractorName(id: number | null | undefined): Promise<string | null> {
+    if (!id) return null;
+    const c = await prisma.contractorCache.findUnique({ where: { adeskId: id } });
+    return c?.name || null;
+  }
+  async function getProjectName(id: number | null | undefined): Promise<string | null> {
+    if (!id) return null;
+    const p = await prisma.projectCache.findUnique({ where: { adeskId: id } });
+    return p?.name || null;
+  }
 
-  // 5. cardNote вытаскиваем из маски карты в описании tx (если это карточная).
+  const contractorNameSnapshot = await getContractorName(adeskContractorId);
+  const projectNameSnapshot = await getProjectName(adeskProjectId);
+  const splitsWithSnapshots = await Promise.all(
+    splits.map(async (s) => ({
+      ...s,
+      contractorNameSnapshot: await getContractorName(s.adeskContractorId),
+      projectNameSnapshot: await getProjectName(s.adeskProjectId),
+    })),
+  );
+
+  // 4. cardNote вытаскиваем из маски карты в описании tx.
   const txDescForCard = typeof body.txDescription === 'string' ? body.txDescription : '';
-  // Маска карты — «220445******2700», requires BIN digits before the *'s.
-  // Без этого regexp ловит «YANDEX*4121*GO» — идентификатор мерчанта.
   const cardSuffixMatch = /\d{4,6}\*+(\d{4})\b/.exec(txDescForCard);
   const cardNote = cardSuffixMatch ? cardSuffixMatch[1] : null;
 
-  // 6. Собираем description для Adesk без дублирования префикса.
+  // 5. Собираем description для Adesk без дублирования префикса.
   const existingDesc = txDescForCard || '';
   const alreadyPrefixed = existingDesc === rawDescription
     || existingDesc.startsWith(rawDescription + ' |');
@@ -106,7 +159,7 @@ export async function POST(
     ? existingDesc
     : existingDesc ? `${rawDescription} | ${existingDesc}` : rawDescription;
 
-  // 7. Создаём Payment сразу в MATCHED-состоянии.
+  // 6. Создаём Payment сразу в MATCHED-состоянии (со сплитами если нужно).
   const payment = await prisma.payment.create({
     data: {
       id: globalThis.crypto.randomUUID(),
@@ -115,8 +168,8 @@ export async function POST(
       adeskCategoryId,
       adeskProjectId,
       adeskContractorId,
-      contractorNameSnapshot: contractorCache?.name || null,
-      projectNameSnapshot: projectCache?.name || null,
+      contractorNameSnapshot,
+      projectNameSnapshot,
       amount,
       date: new Date(dateIso),
       description: rawDescription,
@@ -125,19 +178,47 @@ export async function POST(
       status: 'MATCHED',
       adeskConfirmedTransactionId: txId,
       matchedAt: new Date(),
+      splits: hasSplits
+        ? {
+            create: splitsWithSnapshots.map((s, idx) => ({
+              id: globalThis.crypto.randomUUID(),
+              unitId: s.unitId,
+              adeskCategoryId: s.adeskCategoryId,
+              adeskProjectId: s.adeskProjectId || null,
+              adeskContractorId: s.adeskContractorId || null,
+              contractorNameSnapshot: s.contractorNameSnapshot,
+              projectNameSnapshot: s.projectNameSnapshot,
+              amount: s.amount,
+              description: s.description || null,
+              sortOrder: idx,
+            })),
+          }
+        : undefined,
     },
   });
 
-  // 8. Обновляем Adesk-tx.
+  // 7. Обновляем Adesk-tx (categoryId+projectId+contractorId ИЛИ parts[]).
+  const adeskUpdates: Parameters<typeof adesk.updateTransaction>[1] = {
+    description: newAdeskDesc,
+  };
+  if (hasSplits) {
+    adeskUpdates.parts = splits.map((s) => ({
+      amount: s.amount,
+      categoryId: s.adeskCategoryId,
+      projectId: s.adeskProjectId ?? undefined,
+      contractorId: s.adeskContractorId ?? undefined,
+      description: s.description ?? undefined,
+    }));
+  } else {
+    adeskUpdates.categoryId = adeskCategoryId;
+    if (adeskProjectId) adeskUpdates.projectId = adeskProjectId;
+    if (adeskContractorId) adeskUpdates.contractorId = adeskContractorId;
+  }
+
   try {
-    await adesk.updateTransaction(txId, {
-      categoryId: adeskCategoryId,
-      ...(adeskProjectId ? { projectId: adeskProjectId } : {}),
-      ...(adeskContractorId ? { contractorId: adeskContractorId } : {}),
-      description: newAdeskDesc,
-    });
+    await adesk.updateTransaction(txId, adeskUpdates);
   } catch (err) {
-    // Adesk упал — откатываем Payment, чтобы tx осталась в «неопознанных».
+    // Adesk упал — откатываем Payment (splits уйдут каскадом).
     await prisma.payment.delete({ where: { id: payment.id } });
     console.error(`[uncategorized/assign] Adesk update failed for tx=${txId}, payment rolled back:`, err);
     return Response.json(
@@ -150,6 +231,6 @@ export async function POST(
     ok: true,
     paymentId: payment.id,
     txId,
+    splits: splits.length,
   });
 }
-
