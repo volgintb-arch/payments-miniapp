@@ -19,6 +19,16 @@ const DEFAULT_DAYS = 7;
 const MAX_ITEMS = 500;
 const CACHE_TTL_MS = 60_000;
 
+// Карты (последние 4 цифры), которые НЕ выводим в этой вкладке. Обычно —
+// служебные/чужие карты бухгалтерии, разносить которые сотрудник не должен.
+// Дефолт зашит в код + расширяется через ENV `UNCATEGORIZED_EXCLUDE_CARDS`
+// (comma-separated, напр. "8611,1234"). Не забудь перезапустить pm2 после
+// правки .env.
+const EXCLUDED_CARDS = new Set<string>([
+  '8611',
+  ...(process.env.UNCATEGORIZED_EXCLUDE_CARDS?.split(',').map((s) => s.trim()).filter(Boolean) ?? []),
+]);
+
 // Простой in-memory кэш: список неопознанных tx стоит на большом окне
 // десятки секунд собирать (14 банк-счетов × Adesk latency), а после
 // разноса одной tx админ обычно тут же жмёт «Обновить» ещё раз. Держим
@@ -94,12 +104,13 @@ async function handleGet(request: NextRequest) {
     }
   }
 
-  // Фильтруем: без категории И без проекта, + только карточные (если не withNonCard).
-  // Наличные/платёжки бухгалтера сюда не нужны — разносить их из мини-аппа
-  // всё равно негде. Флаг ?withNonCard=1 отключает card-фильтр.
+  // Фильтруем: без категории И без проекта, + только карточные (если не withNonCard),
+  // + не в EXCLUDED_CARDS (сотрудникам не должны показываться).
   const uncategorized = allTxs.filter(({ tx }) => {
     if (tx.category || tx.project) return false;
     if (!withNonCard && !isCardTransaction(tx.description)) return false;
+    const cardMatch = /\d{4,6}\*+(\d{4})\b/.exec(tx.description || '');
+    if (cardMatch && EXCLUDED_CARDS.has(cardMatch[1])) return false;
     return true;
   });
 
