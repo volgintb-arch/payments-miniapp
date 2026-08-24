@@ -66,6 +66,7 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
   const [days, setDays] = useState(7);
   const [openTxId, setOpenTxId] = useState<number | null>(null);
   const [cardFilter, setCardFilter] = useState('');
+  const [amountFilter, setAmountFilter] = useState('');
 
   const [total, setTotal] = useState(0);
 
@@ -93,11 +94,20 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
     return Array.from(set).sort();
   }, [items]);
 
-  // Отфильтрованные по cardFilter (0-4 цифры, includes-совпадение).
+  // Фильтры по карте и по сумме применяются вместе.
+  // Сумма — includes-совпадение как строка: «500» находит 500, 500.02, 1500…
   const filteredItems = useMemo(() => {
-    if (!cardFilter) return items;
-    return items.filter((t) => t.cardSuffix?.includes(cardFilter));
-  }, [items, cardFilter]);
+    return items.filter((t) => {
+      if (cardFilter && !t.cardSuffix?.includes(cardFilter)) return false;
+      if (amountFilter) {
+        const asStr = String(t.amount);
+        // Формат в БД — number (2 знака после точки), toString даёт «500» или «500.02».
+        // Даём совпадение по префиксу целой части ИЛИ подстроке всей суммы.
+        if (!asStr.includes(amountFilter)) return false;
+      }
+      return true;
+    });
+  }, [items, cardFilter, amountFilter]);
 
   if (loading) return <div className="text-sm text-gray-500 py-8 text-center">Загрузка...</div>;
   if (error) return <div className="text-sm text-red-500 py-8 text-center">{error}</div>;
@@ -107,10 +117,10 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-gray-600">
           Неопознанных: {filteredItems.length}
-          {cardFilter && filteredItems.length !== items.length && (
+          {(cardFilter || amountFilter) && filteredItems.length !== items.length && (
             <span className="text-xs text-gray-400"> из {items.length}</span>
           )}
-          {!cardFilter && total > items.length && (
+          {!cardFilter && !amountFilter && total > items.length && (
             <span className="text-xs text-amber-600 ml-1">
               (показано {items.length} из {total})
             </span>
@@ -138,8 +148,8 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
         </div>
       </div>
 
-      {/* Фильтр по последним 4 цифрам карты */}
-      <div className="flex items-center gap-2 mb-2">
+      {/* Фильтры: последние 4 цифры карты + сумма */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
         <label className="text-xs text-gray-500 shrink-0">Карта:</label>
         <input
           type="text"
@@ -154,6 +164,25 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
         {cardFilter && (
           <button
             onClick={() => setCardFilter('')}
+            className="text-xs text-gray-400 hover:text-gray-600 px-1"
+            title="Сбросить"
+          >
+            ✕
+          </button>
+        )}
+
+        <label className="text-xs text-gray-500 shrink-0 ml-2">Сумма:</label>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={amountFilter}
+          onChange={(e) => setAmountFilter(e.target.value.replace(/[^\d.]/g, ''))}
+          placeholder="напр. 500"
+          className="text-xs border rounded px-2 py-1 bg-white w-24"
+        />
+        {amountFilter && (
+          <button
+            onClick={() => setAmountFilter('')}
             className="text-xs text-gray-400 hover:text-gray-600 px-1"
             title="Сбросить"
           >
@@ -183,8 +212,8 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
 
       {filteredItems.length === 0 && (
         <div className="text-center py-8 text-sm text-gray-500">
-          {cardFilter
-            ? `По карте *${cardFilter} ничего не найдено`
+          {cardFilter || amountFilter
+            ? `Ничего не найдено${cardFilter ? ` по карте *${cardFilter}` : ''}${amountFilter ? ` на сумму ${amountFilter}` : ''}`
             : 'Все транзакции разнесены 🎉'}
         </div>
       )}
