@@ -17,6 +17,7 @@ type UserInfo = {
 
 export default function Home() {
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [pending, setPending] = useState<{ firstName: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingStep, setLoadingStep] = useState('Инициализация…');
   const [showRetry, setShowRetry] = useState(false);
@@ -126,16 +127,22 @@ export default function Home() {
         try { tg.ready(); } catch {}
         try { tg.expand(); } catch {}
 
-        const res = await apiFetch<{ token: string; user: UserInfo }>(
-          '/api/auth/login',
-          {
-            method: 'POST',
-            body: JSON.stringify({ initData: tg.initData }),
-          },
-        );
+        const res = await apiFetch<
+          | { token: string; user: UserInfo }
+          | { pending: true; firstName: string; lastName: string | null }
+        >('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ initData: tg.initData }),
+        });
 
-        setToken(res.token);
-        setUser(res.user);
+        if ('pending' in res) {
+          // Логин прошёл (initData валиден), но isActive=false — ждём
+          // активации админом. Никакого токена не пишем в localStorage.
+          setPending({ firstName: res.firstName });
+        } else {
+          setToken(res.token);
+          setUser(res.user);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Ошибка авторизации');
       } finally {
@@ -178,6 +185,21 @@ export default function Home() {
           >
             Попробовать снова
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (pending) {
+    return (
+      <div className="flex items-center justify-center min-h-screen px-4">
+        <div className="text-center max-w-sm">
+          <div className="text-lg font-semibold mb-2">Доступ ещё не выдан</div>
+          <div className="text-gray-600">
+            Здравствуйте, {pending.firstName}! Ваш аккаунт зарегистрирован,
+            администратор получил уведомление. Как только доступ откроют,
+            приложение заработает.
+          </div>
         </div>
       </div>
     );

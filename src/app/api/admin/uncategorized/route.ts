@@ -11,9 +11,10 @@ import { adesk } from '@/lib/adesk/client';
 import { getAuthUser } from '@/lib/api-helpers';
 import { isCardTransaction } from '@/lib/retro-match';
 
-// Список «неопознанных» — read-only, поэтому не требует ADMIN: любой
-// авторизованный сотрудник может увидеть tx, чтобы разнести свою покупку.
-// Право на assign проверяется отдельно (по доступу к юниту).
+// Только ADMIN. Список показывает реальные банковские операции компании
+// (суммы, счета, номера карт, юр.лица), к которым обычные сотрудники
+// доступа иметь не должны. Разнос через мини-апп — тоже ADMIN-функция;
+// сотрудник заводит расход через «Расход», а не через сырой список tx.
 const CRON_SECRET = process.env.CRON_SECRET || '';
 const DEFAULT_DAYS = 7;
 const MAX_ITEMS = 500;
@@ -218,7 +219,6 @@ async function handleGet(request: NextRequest) {
 function isAuthorized(request: NextRequest): boolean {
   const auth = request.headers.get('authorization');
   if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  // Любой авторизованный пользователь — просмотр списка не даёт возможности
-  // что-то испортить. Разнесение защищено отдельно (userUnit-check в assign).
-  return getAuthUser(request) !== null;
+  const user = getAuthUser(request);
+  return user?.role === 'ADMIN';
 }

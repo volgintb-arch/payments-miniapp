@@ -58,10 +58,19 @@ type PendingIncome = {
   createdAt: string;
 };
 
+type PendingUser = {
+  id: string;
+  telegramUsername: string | null;
+  firstName: string;
+  lastName: string | null;
+  createdAt: string;
+};
+
 export function AdminPending() {
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState<PendingPayment[]>([]);
   const [incomes, setIncomes] = useState<PendingIncome[]>([]);
+  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, Set<number>>>({});
@@ -74,9 +83,13 @@ export function AdminPending() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch<{ payments: PendingPayment[]; incomes?: PendingIncome[] }>('/api/admin/pending');
-      setPayments(res.payments);
-      setIncomes(res.incomes || []);
+      const [pRes, uRes] = await Promise.all([
+        apiFetch<{ payments: PendingPayment[]; incomes?: PendingIncome[] }>('/api/admin/pending'),
+        apiFetch<{ users: PendingUser[] }>('/api/admin/users?pending=1').catch(() => ({ users: [] })),
+      ]);
+      setPayments(pRes.payments);
+      setIncomes(pRes.incomes || []);
+      setPendingUsers(uRes.users || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
     } finally {
@@ -137,6 +150,19 @@ export function AdminPending() {
     }
   };
 
+  const activateUser = async (userId: string) => {
+    if (!confirm('Выдать доступ пользователю? Юниты нужно назначить отдельно.')) return;
+    setBusyId(userId);
+    try {
+      await apiFetch(`/api/admin/users/${userId}/activate`, { method: 'POST' });
+      setPendingUsers((prev) => prev.filter((u) => u.id !== userId));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const rerunCron = async () => {
     setLoading(true);
     try {
@@ -175,7 +201,7 @@ export function AdminPending() {
   if (loading) return <div className="text-sm text-gray-500 py-8 text-center">Загрузка...</div>;
   if (error) return <div className="text-sm text-red-500 py-8 text-center">{error}</div>;
 
-  if (payments.length === 0 && incomes.length === 0) {
+  if (payments.length === 0 && incomes.length === 0 && pendingUsers.length === 0) {
     return (
       <div className="text-center py-8">
         <div className="text-sm text-gray-500 mb-3">Висящих платежей нет 🎉</div>
@@ -203,6 +229,36 @@ export function AdminPending() {
           Запустить матчер
         </button>
       </div>
+
+      {pendingUsers.length > 0 && (
+        <div className="space-y-2 mb-4">
+          <div className="text-xs font-medium text-amber-700">
+            👤 Ожидают активации ({pendingUsers.length})
+          </div>
+          {pendingUsers.map((u) => {
+            const tag = u.telegramUsername ? `@${u.telegramUsername}` : '';
+            const fullName = `${u.firstName} ${u.lastName ?? ''}`.trim();
+            return (
+              <div key={u.id} className="border border-amber-200 rounded-lg p-3 bg-amber-50 flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium break-words">{fullName}</div>
+                  {tag && <div className="text-xs text-gray-600">{tag}</div>}
+                  <div className="text-[10px] text-gray-400">
+                    {new Date(u.createdAt).toLocaleString('ru-RU')}
+                  </div>
+                </div>
+                <button
+                  onClick={() => activateUser(u.id)}
+                  disabled={busyId === u.id}
+                  className="text-xs px-3 py-1.5 bg-amber-600 text-white rounded disabled:opacity-50"
+                >
+                  {busyId === u.id ? '…' : 'Выдать доступ'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {incomes.length > 0 && (
         <div className="space-y-2 mb-4">

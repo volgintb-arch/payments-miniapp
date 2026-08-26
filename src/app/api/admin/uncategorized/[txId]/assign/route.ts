@@ -41,7 +41,7 @@ export async function POST(
   ctx: { params: Promise<{ txId: string }> },
 ) {
   const user = getAuthUser(request);
-  if (!user) {
+  if (!user || user.role !== 'ADMIN') {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
