@@ -22,6 +22,16 @@ import { sendToGroup } from '@/lib/telegram';
 // общую группу расходов, чтобы уведомление не потерялось.
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || undefined;
 
+// Диапазон Telegram id, зарезервированный под smoke-тесты
+// (scripts/smoke-auth-pending.mjs). Для них не шлём admin-notify,
+// чтобы автотесты не спамили админский чат при каждом прогоне.
+// Реальные Telegram id никогда не попадают в этот диапазон.
+const SYNTHETIC_TG_ID_MIN = 999_000_000;
+const SYNTHETIC_TG_ID_MAX = 999_000_999;
+function isSyntheticTgId(id: number): boolean {
+  return id >= SYNTHETIC_TG_ID_MIN && id <= SYNTHETIC_TG_ID_MAX;
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const initData = body?.initData;
@@ -53,17 +63,20 @@ export async function POST(request: Request) {
     });
 
     // Пинок админам. Не await'им — Telegram-таймаут не должен блокировать
-    // клиента с его экраном pending.
-    const tag = created.telegramUsername ? `@${created.telegramUsername}` : '';
-    const fullName = `${created.firstName} ${created.lastName ?? ''}`.trim();
-    const notifyText = [
-      '🆕 Новый пользователь ждёт активации:',
-      `${fullName}${tag ? ' · ' + tag : ''}`,
-      `id: ${created.id}`,
-    ].join('\n');
-    sendToGroup(notifyText, ADMIN_CHAT_ID).catch((err) => {
-      console.error('[auth/login] admin-notify failed:', err);
-    });
+    // клиента с его экраном pending. Skip'аем для synthetic id, чтобы
+    // smoke-тесты не спамили админский чат.
+    if (!isSyntheticTgId(tgUser.id)) {
+      const tag = created.telegramUsername ? `@${created.telegramUsername}` : '';
+      const fullName = `${created.firstName} ${created.lastName ?? ''}`.trim();
+      const notifyText = [
+        '🆕 Новый пользователь ждёт активации:',
+        `${fullName}${tag ? ' · ' + tag : ''}`,
+        `id: ${created.id}`,
+      ].join('\n');
+      sendToGroup(notifyText, ADMIN_CHAT_ID).catch((err) => {
+        console.error('[auth/login] admin-notify failed:', err);
+      });
+    }
 
     return Response.json({
       pending: true,
