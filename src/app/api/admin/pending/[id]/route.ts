@@ -13,7 +13,7 @@ export async function DELETE(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  if (!isAuthorized(request)) {
+  if (!(await isAuthorized(request))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const { id } = await ctx.params;
@@ -29,9 +29,9 @@ export async function DELETE(
   return Response.json({ ok: true, deleted: id });
 }
 
-function isAuthorized(request: NextRequest): boolean {
+async function isAuthorized(request: NextRequest): Promise<boolean> {
   const auth = request.headers.get('authorization');
   if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  const user = getAuthUser(request);
+  const user = await getAuthUser(request);
   return user?.role === 'ADMIN';
 }

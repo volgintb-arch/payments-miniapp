@@ -6,7 +6,7 @@ import { prisma } from '@/lib/db';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
   const direction = request.nextUrl.searchParams.get('direction');

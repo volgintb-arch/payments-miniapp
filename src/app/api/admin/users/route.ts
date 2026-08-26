@@ -11,7 +11,7 @@ import { prisma } from '@/lib/db';
 import { getAuthUser } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
-  const auth = getAuthUser(request);
+  const auth = await getAuthUser(request);
   if (!auth || auth.role !== 'ADMIN') {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }

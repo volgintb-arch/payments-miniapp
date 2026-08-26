@@ -40,7 +40,7 @@ export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ txId: string }> },
 ) {
-  const user = getAuthUser(request);
+  const user = await getAuthUser(request);
   if (!user || user.role !== 'ADMIN') {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }

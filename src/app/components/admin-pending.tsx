@@ -71,6 +71,7 @@ export function AdminPending() {
   const [payments, setPayments] = useState<PendingPayment[]>([]);
   const [incomes, setIncomes] = useState<PendingIncome[]>([]);
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
+  const [activatingUser, setActivatingUser] = useState<PendingUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, Set<number>>>({});
@@ -150,17 +151,11 @@ export function AdminPending() {
     }
   };
 
-  const activateUser = async (userId: string) => {
-    if (!confirm('Выдать доступ пользователю? Юниты нужно назначить отдельно.')) return;
-    setBusyId(userId);
-    try {
-      await apiFetch(`/api/admin/users/${userId}/activate`, { method: 'POST' });
-      setPendingUsers((prev) => prev.filter((u) => u.id !== userId));
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Ошибка');
-    } finally {
-      setBusyId(null);
-    }
+  // Активация выполняется через модалку с чекбоксами юнитов (см. ActivateUserModal).
+  // Здесь оставлена только оптимистичная выдача из списка после успешного submit'а.
+  const onActivateSuccess = (userId: string) => {
+    setPendingUsers((prev) => prev.filter((u) => u.id !== userId));
+    setActivatingUser(null);
   };
 
   const rerunCron = async () => {
@@ -248,11 +243,10 @@ export function AdminPending() {
                   </div>
                 </div>
                 <button
-                  onClick={() => activateUser(u.id)}
-                  disabled={busyId === u.id}
-                  className="text-xs px-3 py-1.5 bg-amber-600 text-white rounded disabled:opacity-50"
+                  onClick={() => setActivatingUser(u)}
+                  className="text-xs px-3 py-1.5 bg-amber-600 text-white rounded"
                 >
-                  {busyId === u.id ? '…' : 'Выдать доступ'}
+                  Выдать доступ
                 </button>
               </div>
             );
@@ -440,6 +434,147 @@ export function AdminPending() {
           </div>
         </div>
       ))}
+
+      {activatingUser && (
+        <ActivateUserModal
+          user={activatingUser}
+          onCancel={() => setActivatingUser(null)}
+          onSuccess={onActivateSuccess}
+        />
+      )}
+    </div>
+  );
+}
+
+type Unit = { id: number; name: string };
+
+function ActivateUserModal({
+  user,
+  onCancel,
+  onSuccess,
+}: {
+  user: PendingUser;
+  onCancel: () => void;
+  onSuccess: (userId: string) => void;
+}) {
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<{ units: Unit[] }>('/api/units')
+      .then((res) => setUnits(res.units))
+      .catch((e) => setErr(e instanceof Error ? e.message : 'Не удалось загрузить юниты'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const toggle = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allToggle = () => {
+    if (selected.size === units.length) setSelected(new Set());
+    else setSelected(new Set(units.map((u) => u.id)));
+  };
+
+  const submit = async () => {
+    setErr(null);
+    if (selected.size === 0) {
+      const ok = confirm(
+        'Ни один юнит не выбран. Пользователь будет активирован, но не сможет подавать платежи. Продолжить?'
+      );
+      if (!ok) return;
+    }
+    setSubmitting(true);
+    try {
+      await apiFetch(`/api/admin/users/${user.id}/activate`, {
+        method: 'POST',
+        body: JSON.stringify({ unitIds: Array.from(selected) }),
+      });
+      onSuccess(user.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const tag = user.telegramUsername ? `@${user.telegramUsername}` : '';
+  const fullName = `${user.firstName} ${user.lastName ?? ''}`.trim();
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/40 flex items-end sm:items-center justify-center">
+      <div className="bg-white w-full sm:max-w-md sm:rounded-lg rounded-t-lg max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="px-4 py-3 border-b flex items-center justify-between shrink-0">
+          <div>
+            <div className="text-base font-semibold">Активировать {fullName}</div>
+            {tag && <div className="text-xs text-gray-500">{tag}</div>}
+          </div>
+          <button onClick={onCancel} className="text-gray-400 text-xl leading-none px-2">✕</button>
+        </div>
+        <div className="px-4 py-3 overflow-y-auto flex-1">
+          {loading && <div className="text-sm text-gray-500 text-center py-4">Загрузка юнитов…</div>}
+          {!loading && units.length === 0 && (
+            <div className="text-sm text-gray-500 text-center py-4">Юнитов нет в системе.</div>
+          )}
+          {!loading && units.length > 0 && (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-medium text-gray-600">
+                  Доступ к юнитам ({selected.size}/{units.length})
+                </div>
+                <button
+                  type="button"
+                  onClick={allToggle}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  {selected.size === units.length ? 'Снять все' : 'Выбрать все'}
+                </button>
+              </div>
+              <div className="space-y-1">
+                {units.map((u) => (
+                  <label
+                    key={u.id}
+                    className="flex items-center gap-2 px-2 py-1.5 border rounded-lg cursor-pointer hover:bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(u.id)}
+                      onChange={() => toggle(u.id)}
+                    />
+                    <span className="text-sm">{u.name}</span>
+                  </label>
+                ))}
+              </div>
+              {selected.size === 0 && (
+                <div className="mt-3 p-2 text-xs bg-amber-50 border border-amber-200 rounded text-amber-800">
+                  ⚠ Без юнитов пользователь не сможет подавать платежи.
+                </div>
+              )}
+            </>
+          )}
+          {err && <div className="text-xs text-red-500 mt-2">{err}</div>}
+        </div>
+        <div className="px-4 py-3 border-t flex gap-2 shrink-0 bg-white">
+          <button onClick={onCancel} className="px-4 py-2 bg-gray-100 rounded-lg text-sm">
+            Отмена
+          </button>
+          <button
+            onClick={submit}
+            disabled={submitting || loading}
+            className="flex-1 bg-amber-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-amber-700"
+          >
+            {submitting ? 'Активируем…' : 'Активировать'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -10,7 +10,7 @@ const SAFES = [
 ];
 
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
   return Response.json({ safes: SAFES });

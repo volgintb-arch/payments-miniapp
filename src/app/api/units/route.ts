@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import { requireAuth } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
   const userUnits = await prisma.userUnit.findMany({

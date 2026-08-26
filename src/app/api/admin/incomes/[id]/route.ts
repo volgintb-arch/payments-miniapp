@@ -9,10 +9,10 @@ import { getAuthUser } from '@/lib/api-helpers';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
-function isAuthorized(request: NextRequest): boolean {
+async function isAuthorized(request: NextRequest): Promise<boolean> {
   const auth = request.headers.get('authorization');
   if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  const user = getAuthUser(request);
+  const user = await getAuthUser(request);
   return user?.role === 'ADMIN';
 }
 
@@ -20,7 +20,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isAuthorized(request)) {
+  if (!(await isAuthorized(request))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -70,7 +70,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isAuthorized(request)) {
+  if (!(await isAuthorized(request))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const { id } = await params;

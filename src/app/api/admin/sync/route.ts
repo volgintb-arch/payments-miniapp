@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   // Доступ по ADMIN_SECRET или JWT с ролью ADMIN
   const secret = request.headers.get('x-admin-secret');
   if (secret !== process.env.ADMIN_SECRET) {
-    const auth = requireRole(request, ['ADMIN']);
+    const auth = await requireRole(request, ['ADMIN']);
     if (auth instanceof Response) return auth;
   }
 

@@ -13,7 +13,7 @@ let lastSyncAt = 0;
 let inflight: Promise<number> | null = null;
 
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
   const now = Date.now();

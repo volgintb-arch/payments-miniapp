@@ -5,7 +5,7 @@ import { adesk } from '@/lib/adesk/client';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
   const q = request.nextUrl.searchParams.get('q');

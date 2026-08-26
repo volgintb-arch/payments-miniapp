@@ -8,7 +8,7 @@ import { adesk } from '@/lib/adesk/client';
 import { sendToGroup } from '@/lib/telegram';
 
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
   const page = Math.max(1, Number(request.nextUrl.searchParams.get('page')) || 1);
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
   const body = await request.json().catch(() => null);

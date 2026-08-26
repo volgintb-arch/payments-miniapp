@@ -15,7 +15,7 @@ export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  if (!isAuthorized(request)) {
+  if (!(await isAuthorized(request))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -126,9 +126,9 @@ export async function POST(
   });
 }
 
-function isAuthorized(request: NextRequest): boolean {
+async function isAuthorized(request: NextRequest): Promise<boolean> {
   const auth = request.headers.get('authorization');
   if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  const user = getAuthUser(request);
+  const user = await getAuthUser(request);
   return user?.role === 'ADMIN';
 }
