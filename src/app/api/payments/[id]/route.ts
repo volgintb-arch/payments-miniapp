@@ -132,7 +132,12 @@ export async function PATCH(
         tag,
       ].filter(Boolean);
       const tgText = parts.join(' / ') + '\n(отредактировано)';
-      await editGroupMessage(updated.tgChatId, updated.tgMessageId, tgText);
+      // Не ждём Telegram: когда api.telegram.org недоступен, undici висит на
+      // connect до таймаута и держит ответ пользователю на десяток секунд.
+      // Правка платежа уже в БД — сообщение в группе не стоит того.
+      editGroupMessage(updated.tgChatId, updated.tgMessageId, tgText).catch((err) => {
+        console.error('[payment edit] telegram edit failed:', err);
+      });
     } catch (err) {
       console.error('[payment edit] telegram edit failed:', err);
     }

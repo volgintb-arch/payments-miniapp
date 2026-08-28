@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Вендорённая копия Telegram Web App SDK — чужой код, не наш стиль.
+    // Обновляется целиком: curl -o public/telegram-web-app.js \
+    //   https://telegram.org/js/telegram-web-app.js
+    "public/telegram-web-app.js",
   ]),
 ]);
 

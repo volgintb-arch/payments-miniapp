@@ -16,10 +16,28 @@ type UserInfo = {
 };
 
 // SDK приезжает отдельным <script async> с telegram.org, то есть уже после
-// гидрации, а на медленной сети — сильно после. Если же провайдер режет
-// telegram.org, он не появляется вообще. Поэтому window опрашиваем до
+// гидрации, а на медленной сети — сильно после. Поэтому window опрашиваем до
 // дедлайна, а не читаем один раз и надеемся.
 const TG_SDK_TIMEOUT_MS = 15_000;
+
+// telegram.org у части операторов недоступен: на этом же сервере наглухо не
+// открывается api.telegram.org (UND_ERR_CONNECT_TIMEOUT в логах), и та же
+// участь у клиентов — приложение просто не грузилось. Поэтому держим копию
+// SDK в public/ и подставляем её со своего домена, если с telegram.org за
+// FALLBACK_AFTER_MS ничего не приехало. Свой домен заведомо доступен: с него
+// только что загрузилась сама страница.
+const TG_SDK_FALLBACK_SRC = '/telegram-web-app.js';
+const TG_SDK_FALLBACK_AFTER_MS = 4_000;
+
+function injectLocalSdk(): void {
+  if (typeof document === 'undefined') return;
+  if (document.querySelector(`script[src="${TG_SDK_FALLBACK_SRC}"]`)) return;
+  const el = document.createElement('script');
+  el.src = TG_SDK_FALLBACK_SRC;
+  el.async = true;
+  el.onerror = () => console.error('[init] local Telegram SDK failed to load');
+  document.head.appendChild(el);
+}
 
 type TgWebApp = {
   initData?: string;
@@ -40,10 +58,16 @@ function getTg(): TgWebApp | undefined {
 }
 
 async function waitForTg(timeoutMs: number): Promise<TgWebApp | undefined> {
-  const deadline = Date.now() + timeoutMs;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  let fellBack = false;
   for (;;) {
     const tg = getTg();
     if (tg) return tg;
+    if (!fellBack && Date.now() - started >= TG_SDK_FALLBACK_AFTER_MS) {
+      fellBack = true;
+      injectLocalSdk();
+    }
     if (Date.now() >= deadline) return undefined;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -164,8 +188,8 @@ export default function Home() {
 
         if (!tg) {
           setError(
-            'Не удалось загрузить Telegram (telegram.org не ответил). ' +
-            'Проверьте соединение и откройте приложение заново.',
+            'Не удалось загрузить Telegram — ни с telegram.org, ни с нашего ' +
+            'сервера. Проверьте соединение и откройте приложение заново.',
           );
           return;
         }
