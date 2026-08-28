@@ -5,24 +5,15 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
-import { getAuthUser } from '@/lib/api-helpers';
+import { denyUnlessRole } from '@/lib/api-helpers';
 
-const CRON_SECRET = process.env.CRON_SECRET || '';
-
-async function isAuthorized(request: NextRequest): Promise<boolean> {
-  const auth = request.headers.get('authorization');
-  if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  const user = await getAuthUser(request);
-  return user?.role === 'ADMIN';
-}
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!(await isAuthorized(request))) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const denied = await denyUnlessRole(request, ['ADMIN']);
+  if (denied) return denied;
 
   const { id } = await params;
   const income = await prisma.cashIncome.findUnique({ where: { id } });
@@ -70,9 +61,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!(await isAuthorized(request))) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const denied = await denyUnlessRole(request, ['ADMIN']);
+  if (denied) return denied;
   const { id } = await params;
   const income = await prisma.cashIncome.findUnique({ where: { id } });
   if (!income) return Response.json({ error: 'Not found' }, { status: 404 });

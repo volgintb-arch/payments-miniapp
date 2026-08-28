@@ -11,16 +11,14 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getAuthUser, badRequest } from '@/lib/api-helpers';
+import { denyUnlessRole, badRequest } from '@/lib/api-helpers';
 
 export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const auth = await getAuthUser(request);
-  if (!auth || auth.role !== 'ADMIN') {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const denied = await denyUnlessRole(request, ['ADMIN']);
+  if (denied) return denied;
 
   const { id } = await ctx.params;
   const body = await request.json().catch(() => null);

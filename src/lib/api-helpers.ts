@@ -66,6 +66,39 @@ export async function requireRole(
   return result;
 }
 
+// Машинный доступ для cron и служебных скриптов: Bearer CRON_SECRET в обход
+// JWT. Секрет читаем на каждый вызов, а не в module scope — правка .env
+// подхватывается рестартом pm2 без зависимости от порядка импортов.
+export function hasCronSecret(request: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET || '';
+  return secret !== '' && request.headers.get('authorization') === `Bearer ${secret}`;
+}
+
+// Гейт для admin-роутов: CRON_SECRET в обход, иначе JWT с одной из ролей.
+// Возвращает готовый Response (401 — нет сессии, 403 — не та роль) либо null,
+// если запрос можно обслуживать.
+//
+// Разделение 401 и 403 здесь не косметика. apiFetch на фронте на ЛЮБОЙ 401
+// стирает токен и перезагружает страницу (см. lib/hooks/use-api.ts). Если
+// отдавать 401 на промах по роли, сотрудник вместо понятной ошибки молча
+// разлогинивается, приложение перезапускается и выбрасывает его на стартовую
+// вкладку — со стороны это выглядит как «вкладка не открывается».
+export async function denyUnlessRole(
+  request: NextRequest,
+  allowedRoles: string[],
+): Promise<Response | null> {
+  if (hasCronSecret(request)) return null;
+  const result = await requireRole(request, allowedRoles);
+  return result instanceof Response ? result : null;
+}
+
+// То же, но роль не важна — достаточно активной сессии (или CRON_SECRET).
+export async function denyUnlessAuthed(request: NextRequest): Promise<Response | null> {
+  if (hasCronSecret(request)) return null;
+  const result = await requireAuth(request);
+  return result instanceof Response ? result : null;
+}
+
 export function badRequest(message: string) {
   return Response.json({ error: message }, { status: 400 });
 }

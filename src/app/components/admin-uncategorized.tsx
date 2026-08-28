@@ -55,6 +55,12 @@ type Split = {
   description: string;
 };
 
+// Список собирается обходом всех банк-счетов в Adesk пачками по 3, с ретраями
+// на 429 — на холодном кэше и большом окне это заметно больше дефолтных 30
+// секунд apiFetch. Даём запросу 3 минуты: лучше подождать с честной
+// подсказкой, чем получить «Сервер не отвечает» на живом запросе.
+const LOAD_TIMEOUT_MS = 180_000;
+
 function newSplitId() {
   return Math.random().toString(36).slice(2, 11);
 }
@@ -69,13 +75,18 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
   const [amountFilter, setAmountFilter] = useState('');
 
   const [total, setTotal] = useState(0);
+  const [slowHint, setSlowHint] = useState(false);
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
+    setSlowHint(false);
     try {
       const url = `/api/admin/uncategorized?days=${days}${force ? '&nocache=1' : ''}`;
-      const res = await apiFetch<{ items: UncategorizedTx[]; days: number; total: number; shown: number }>(url);
+      const res = await apiFetch<{ items: UncategorizedTx[]; days: number; total: number; shown: number }>(
+        url,
+        { timeoutMs: LOAD_TIMEOUT_MS },
+      );
       setItems(res.items);
       setTotal(res.total);
     } catch (e) {
@@ -86,6 +97,15 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
   }, [days]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Через 8 секунд ожидания объясняем, почему так долго — иначе человек
+  // решает, что вкладка зависла, и уходит. Сброс флага — в load(), чтобы не
+  // дёргать setState синхронно в теле эффекта.
+  useEffect(() => {
+    if (!loading) return;
+    const t = setTimeout(() => setSlowHint(true), 8_000);
+    return () => clearTimeout(t);
+  }, [loading]);
 
   // Уникальные cardSuffix из текущей выборки (для чипсов-подсказок).
   const uniqueCardSuffixes = useMemo(() => {
@@ -109,8 +129,28 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
     });
   }, [items, cardFilter, amountFilter]);
 
-  if (loading) return <div className="text-sm text-gray-500 py-8 text-center">Загрузка...</div>;
-  if (error) return <div className="text-sm text-red-500 py-8 text-center">{error}</div>;
+  if (loading) {
+    return (
+      <div className="text-sm text-gray-500 py-8 text-center space-y-1">
+        <div>Загрузка...</div>
+        {slowHint && (
+          <div className="text-xs text-gray-400">
+            Собираем операции по всем счетам, это может занять до минуты.
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="py-8 text-center space-y-2">
+        <div className="text-sm text-red-500">{error}</div>
+        <button onClick={() => load(true)} className="text-xs px-3 py-1 bg-gray-100 rounded">
+          Повторить
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

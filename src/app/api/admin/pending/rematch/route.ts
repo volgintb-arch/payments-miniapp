@@ -8,14 +8,12 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { processRetroMatch } from '@/lib/retro-match';
-import { getAuthUser } from '@/lib/api-helpers';
+import { denyUnlessRole } from '@/lib/api-helpers';
 
-const CRON_SECRET = process.env.CRON_SECRET || '';
 
 export async function POST(request: NextRequest) {
-  if (!(await isAuthorized(request))) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const denied = await denyUnlessRole(request, ['ADMIN']);
+  if (denied) return denied;
 
   const payments = await prisma.payment.findMany({
     where: {
@@ -37,11 +35,4 @@ export async function POST(request: NextRequest) {
   }
 
   return Response.json({ ok: true, total: payments.length, results });
-}
-
-async function isAuthorized(request: NextRequest): Promise<boolean> {
-  const auth = request.headers.get('authorization');
-  if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  const user = await getAuthUser(request);
-  return user?.role === 'ADMIN';
 }

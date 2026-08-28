@@ -20,17 +20,15 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getAuthUser } from '@/lib/api-helpers';
+import { denyUnlessRole } from '@/lib/api-helpers';
 
-const CRON_SECRET = process.env.CRON_SECRET || '';
 
 export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  if (!(await isAuthorized(request))) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const denied = await denyUnlessRole(request, ['ADMIN']);
+  if (denied) return denied;
 
   const { id } = await ctx.params;
 
@@ -63,11 +61,4 @@ export async function POST(
     paymentId: id,
     releasedTxId,
   });
-}
-
-async function isAuthorized(request: NextRequest): Promise<boolean> {
-  const auth = request.headers.get('authorization');
-  if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  const user = await getAuthUser(request);
-  return user?.role === 'ADMIN';
 }

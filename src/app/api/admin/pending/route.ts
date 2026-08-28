@@ -7,10 +7,9 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
-import { getAuthUser } from '@/lib/api-helpers';
+import { denyUnlessRole } from '@/lib/api-helpers';
 import { isCardTransaction, extractCardSuffix, txMatchesCard, getMatcherBankAccountIds } from '@/lib/retro-match';
 
-const CRON_SECRET = process.env.CRON_SECRET || '';
 const WINDOW_DAYS = 7;
 const AMOUNT_TOLERANCE = 10;
 
@@ -27,9 +26,8 @@ export async function GET(request: NextRequest) {
 }
 
 async function handleGet(request: NextRequest) {
-  if (!(await isAuthorized(request))) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const denied = await denyUnlessRole(request, ['ADMIN']);
+  if (denied) return denied;
 
   const payments = await prisma.payment.findMany({
     where: {
@@ -210,11 +208,4 @@ async function handleGet(request: NextRequest) {
   );
 
   return Response.json({ payments: out, incomes: incomesOut });
-}
-
-async function isAuthorized(request: NextRequest): Promise<boolean> {
-  const auth = request.headers.get('authorization');
-  if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  const user = await getAuthUser(request);
-  return user?.role === 'ADMIN';
 }

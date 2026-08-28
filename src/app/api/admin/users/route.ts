@@ -8,13 +8,11 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getAuthUser } from '@/lib/api-helpers';
+import { denyUnlessRole } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
-  const auth = await getAuthUser(request);
-  if (!auth || auth.role !== 'ADMIN') {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const denied = await denyUnlessRole(request, ['ADMIN']);
+  if (denied) return denied;
 
   const pendingOnly = request.nextUrl.searchParams.get('pending') === '1';
 

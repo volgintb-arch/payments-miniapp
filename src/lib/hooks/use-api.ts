@@ -19,28 +19,37 @@ export function clearToken() {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+// timeoutMs — для заведомо долгих эндпоинтов. Дефолтные 30 секунд рассчитаны
+// на обычный CRUD; запросы, которые ходят в Adesk по всем банк-счетам, в них
+// не укладываются и рвутся на середине (см. /api/admin/uncategorized).
+export type ApiFetchOptions = RequestInit & { timeoutMs?: number };
+
 export async function apiFetch<T>(
   path: string,
-  opts: RequestInit = {},
+  opts: ApiFetchOptions = {},
 ): Promise<T> {
+  const { timeoutMs, ...init } = opts;
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(opts.headers as Record<string, string>),
+    ...(init.headers as Record<string, string>),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   // Таймаут через AbortController — иначе fetch может висеть бесконечно
   // (плохой LTE, зависший upstream), а пользователь видит вечную «Загрузку…».
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    timeoutMs ?? REQUEST_TIMEOUT_MS,
+  );
 
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
-      ...opts,
+      ...init,
       headers,
-      signal: opts.signal ?? controller.signal,
+      signal: init.signal ?? controller.signal,
     });
   } catch (err) {
     clearTimeout(timeoutId);
@@ -51,6 +60,10 @@ export async function apiFetch<T>(
   }
   clearTimeout(timeoutId);
 
+  // 401 = сессии нет (истёк/битый токен, пользователь деактивирован) —
+  // единственный случай, когда сброс токена и перезагрузка уместны. Промах
+  // по роли сервер обязан отдавать 403, иначе он молча разлогинит человека:
+  // см. denyUnlessRole в lib/api-helpers.ts.
   if (res.status === 401) {
     clearToken();
     window.location.reload();

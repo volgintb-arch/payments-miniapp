@@ -1,21 +1,22 @@
 // GET /api/admin/uncategorized?days=30
 // Возвращает outcome-транзакции Adesk без категории и без проекта
 // («неопознанные»), которые ещё не привязаны к какому-либо Payment.
-// Для страницы «Неопознанные» в мини-аппе — админ разносит их вручную.
+// Для вкладки «Неопознанные» в мини-аппе — сотрудник разносит их вручную.
 //
-// Доступ: Bearer CRON_SECRET или JWT с ролью ADMIN.
+// Доступ: Bearer CRON_SECRET или любой авторизованный сотрудник (активный
+// JWT). Разнос транзакции — POST [txId]/assign — ограничен юнитами
+// пользователя, см. соседний route.
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
-import { getAuthUser } from '@/lib/api-helpers';
+import { denyUnlessAuthed } from '@/lib/api-helpers';
 import { isCardTransaction } from '@/lib/retro-match';
 
-// Только ADMIN. Список показывает реальные банковские операции компании
-// (суммы, счета, номера карт, юр.лица), к которым обычные сотрудники
-// доступа иметь не должны. Разнос через мини-апп — тоже ADMIN-функция;
-// сотрудник заводит расход через «Расход», а не через сырой список tx.
-const CRON_SECRET = process.env.CRON_SECRET || '';
+// Список видит любой авторизованный сотрудник: разносить «неопознанные»
+// транзакции — общая работа, а не только админская. Ограничения остаются
+// два: EXCLUDED_CARDS убирает служебные карты бухгалтерии из выдачи, а
+// разнос в чужой юнит отсекается проверкой userUnit в [txId]/assign.
 const DEFAULT_DAYS = 7;
 const MAX_ITEMS = 500;
 const CACHE_TTL_MS = 60_000;
@@ -24,7 +25,8 @@ const CACHE_TTL_MS = 60_000;
 // служебные/чужие карты бухгалтерии, разносить которые сотрудник не должен.
 // Дефолт зашит в код + расширяется через ENV `UNCATEGORIZED_EXCLUDE_CARDS`
 // (comma-separated, напр. "8611,1234"). Не забудь перезапустить pm2 после
-// правки .env.
+// правки .env. Теперь это единственный фильтр видимости в выдаче — вкладку
+// открыли всем сотрудникам, так что список карт держи в актуальном виде.
 const EXCLUDED_CARDS = new Set<string>([
   '8611',
   ...(process.env.UNCATEGORIZED_EXCLUDE_CARDS?.split(',').map((s) => s.trim()).filter(Boolean) ?? []),
@@ -50,9 +52,8 @@ export async function GET(request: NextRequest) {
 }
 
 async function handleGet(request: NextRequest) {
-  if (!(await isAuthorized(request))) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const denied = await denyUnlessAuthed(request);
+  if (denied) return denied;
 
   const daysParam = Number(request.nextUrl.searchParams.get('days'));
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 180
@@ -214,11 +215,4 @@ async function handleGet(request: NextRequest) {
   const body = { items, days, total: totalAvailable, shown: items.length };
   cache.set(cacheKey, { at: Date.now(), body });
   return Response.json(body);
-}
-
-async function isAuthorized(request: NextRequest): Promise<boolean> {
-  const auth = request.headers.get('authorization');
-  if (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
-  const user = await getAuthUser(request);
-  return user?.role === 'ADMIN';
 }

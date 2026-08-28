@@ -40,8 +40,11 @@ export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ txId: string }> },
 ) {
+  // Роль не проверяем: разносить транзакции может любой активный сотрудник.
+  // Реальный гейт — проверка userUnit ниже (шаг 2): разнести можно только в
+  // юниты, к которым пользователь привязан.
   const user = await getAuthUser(request);
-  if (!user || user.role !== 'ADMIN') {
+  if (!user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
