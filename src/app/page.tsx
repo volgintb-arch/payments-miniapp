@@ -15,6 +15,40 @@ type UserInfo = {
   role: string;
 };
 
+// SDK приезжает отдельным <script async> с telegram.org, то есть уже после
+// гидрации, а на медленной сети — сильно после. Если же провайдер режет
+// telegram.org, он не появляется вообще. Поэтому window опрашиваем до
+// дедлайна, а не читаем один раз и надеемся.
+const TG_SDK_TIMEOUT_MS = 15_000;
+
+type TgWebApp = {
+  initData?: string;
+  initDataUnsafe?: {
+    start_param?: string;
+    chat?: { id: number };
+  };
+  colorScheme?: 'light' | 'dark';
+  ready?: () => void;
+  expand?: () => void;
+  onEvent?: (event: string, cb: () => void) => void;
+  offEvent?: (event: string, cb: () => void) => void;
+};
+
+function getTg(): TgWebApp | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+}
+
+async function waitForTg(timeoutMs: number): Promise<TgWebApp | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const tg = getTg();
+    if (tg) return tg;
+    if (Date.now() >= deadline) return undefined;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 export default function Home() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [pending, setPending] = useState<{ firstName: string } | null>(null);
@@ -26,81 +60,90 @@ export default function Home() {
   const [chatId, setChatId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Синхронизация темы Telegram → класс .dark на <html>.
-    // Делаем это сразу (не в setTimeout), чтобы UI не вспышкой переключился.
+    let cancelled = false;
+    let themeSource: TgWebApp | undefined;
+
+    // Синхронизация темы Telegram → класс .dark на <html>. SDK перечитываем
+    // на каждом вызове: на первом рендере его ещё может не быть в window.
     function applyTheme() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tg = (window as any).Telegram?.WebApp;
-      const scheme = tg?.colorScheme as 'light' | 'dark' | undefined;
+      const scheme = getTg()?.colorScheme;
       const isDark =
         scheme === 'dark' ||
         (!scheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.classList.toggle('dark', isDark);
     }
     applyTheme();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tg = (window as any).Telegram?.WebApp;
-    tg?.onEvent?.('themeChanged', applyTheme);
 
-    // Кнопка «Обновить» появится через 10 секунд, если авторизация ещё висит.
-    const retryTimer = setTimeout(() => setShowRetry(true), 10_000);
-
-    // Аварийный таймер: если через 20 секунд мы всё ещё грузимся —
-    // значит что-то из init() тихо не выполнилось (JS-ошибка в SDK,
-    // недоступный localStorage, зависший fetch). Показываем ошибку.
-    const bailTimer = setTimeout(() => {
-      setError('Приложение не смогло инициализироваться. Попробуйте обновить страницу.');
-      setLoading(false);
-    }, 20_000);
-
-    // Даём время Telegram SDK загрузиться
-    const timer = setTimeout(() => {
-      init();
-    }, 500);
-    return () => {
-      clearTimeout(timer);
-      clearTimeout(retryTimer);
-      clearTimeout(bailTimer);
-      tg?.offEvent?.('themeChanged', applyTheme);
-    };
-
-    async function init() {
-      setLoadingStep('Читаем контекст Telegram…');
-
-      // Читаем chat_id СРАЗУ, до проверки токена. Оборачиваем — на iOS
-      // WebApp SDK может кинуть при чтении initDataUnsafe в неудачный момент.
+    // Ждём SDK в фоне и не блокируем им старт: сохранённая сессия из
+    // localStorage Telegram не требует. Тема и chatId подтянутся, когда (и
+    // если) SDK приедет.
+    const tgReady = waitForTg(TG_SDK_TIMEOUT_MS);
+    tgReady.then((tg) => {
+      if (cancelled || !tg) return;
+      themeSource = tg;
+      tg.onEvent?.('themeChanged', applyTheme);
+      applyTheme();
+      // Оборачиваем — на iOS SDK может кинуть при чтении initDataUnsafe
+      // в неудачный момент.
       try {
-        if (tg?.initDataUnsafe) {
-          const sp = tg.initDataUnsafe.start_param;
-          if (sp && sp.startsWith('c')) {
-            const match = sp.match(/^c(\d+)(?:t(\d+))?$/);
-            if (match) {
-              const cid = `-${match[1]}`;
-              const tid = match[2];
-              setChatId(tid ? `${cid}_${tid}` : cid);
-            }
-          } else if (tg.initDataUnsafe.chat?.id) {
-            setChatId(String(tg.initDataUnsafe.chat.id));
+        const sp = tg.initDataUnsafe?.start_param;
+        if (sp && sp.startsWith('c')) {
+          const match = sp.match(/^c(\d+)(?:t(\d+))?$/);
+          if (match) {
+            const cid = `-${match[1]}`;
+            const tid = match[2];
+            setChatId(tid ? `${cid}_${tid}` : cid);
           }
+        } else if (tg.initDataUnsafe?.chat?.id) {
+          setChatId(String(tg.initDataUnsafe.chat.id));
         }
       } catch (err) {
         console.warn('[init] failed to read tg.initDataUnsafe:', err);
       }
+    });
 
-      // Читаем localStorage тоже под try/catch — в приватном режиме Safari
-      // или при заблокированных cookies он бросает SecurityError.
-      let token: string | null = null;
-      try {
-        token = localStorage.getItem('token');
-      } catch (err) {
-        console.warn('[init] localStorage unavailable:', err);
-      }
+    // Кнопка «Обновить» появится через 10 секунд, если авторизация ещё висит.
+    const retryTimer = setTimeout(() => setShowRetry(true), 10_000);
 
+    // Аварийный таймер: если init() тихо не доехал (JS-ошибка в SDK,
+    // недоступный localStorage, зависший fetch) — показываем ошибку. Лестница
+    // порогов: подсказка «что-то долго» + кнопка на 10 с, дедлайн SDK 15 с,
+    // таймаут apiFetch 30 с, и только потом этот. Раньше он стоял на 20 с и
+    // гасил живой запрос, который вот-вот вернулся бы.
+    const bailTimer = setTimeout(() => {
+      if (cancelled) return;
+      setError('Приложение не смогло инициализироваться. Попробуйте обновить страницу.');
+      setLoading(false);
+    }, 60_000);
+
+    init();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      clearTimeout(bailTimer);
+      themeSource?.offEvent?.('themeChanged', applyTheme);
+    };
+
+    async function init() {
       try {
+        // 1. Сохранённая сессия. Проверяем ДО Telegram: она работает без SDK,
+        //    и когда telegram.org недоступен, постоянный пользователь всё
+        //    равно попадёт в приложение.
+        let token: string | null = null;
+        try {
+          token = localStorage.getItem('token');
+        } catch (err) {
+          // В приватном режиме Safari или при заблокированных cookies
+          // localStorage бросает SecurityError.
+          console.warn('[init] localStorage unavailable:', err);
+        }
+
         if (token) {
           try {
             setLoadingStep('Проверяем сессию…');
             await apiFetch('/api/units');
+            if (cancelled) return;
             const payload = JSON.parse(atob(token.split('.')[1]));
             setUser({
               id: payload.sub,
@@ -108,24 +151,32 @@ export default function Home() {
               lastName: null,
               role: payload.role,
             });
-            setLoading(false);
-            clearTimeout(bailTimer);
             return;
           } catch {
             try { localStorage.removeItem('token'); } catch {}
           }
         }
 
-        if (!tg?.initData) {
+        // 2. Сессии нет — без Telegram дальше никак.
+        setLoadingStep('Ждём Telegram…');
+        const tg = await tgReady;
+        if (cancelled) return;
+
+        if (!tg) {
+          setError(
+            'Не удалось загрузить Telegram (telegram.org не ответил). ' +
+            'Проверьте соединение и откройте приложение заново.',
+          );
+          return;
+        }
+        if (!tg.initData) {
           setError('Откройте приложение через Telegram');
-          setLoading(false);
-          clearTimeout(bailTimer);
           return;
         }
 
         setLoadingStep('Авторизация через Telegram…');
-        try { tg.ready(); } catch {}
-        try { tg.expand(); } catch {}
+        try { tg.ready?.(); } catch {}
+        try { tg.expand?.(); } catch {}
 
         const res = await apiFetch<
           | { token: string; user: UserInfo }
@@ -134,6 +185,7 @@ export default function Home() {
           method: 'POST',
           body: JSON.stringify({ initData: tg.initData }),
         });
+        if (cancelled) return;
 
         if ('pending' in res) {
           // Логин прошёл (initData валиден), но isActive=false — ждём
@@ -144,10 +196,13 @@ export default function Home() {
           setUser(res.user);
         }
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Ошибка авторизации');
       } finally {
-        setLoading(false);
-        clearTimeout(bailTimer);
+        if (!cancelled) {
+          setLoading(false);
+          clearTimeout(bailTimer);
+        }
       }
     }
   }, []);

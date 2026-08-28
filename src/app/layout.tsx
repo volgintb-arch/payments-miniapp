@@ -28,7 +28,15 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <script src="https://telegram.org/js/telegram-web-app.js" />
+        {/*
+          Блокирующий <script> с telegram.org был единственной точкой отказа
+          всей страницы: пока он грузится, браузер не парсит документ, а если
+          домен режет провайдер — пользователь смотрит в белый экран, пока
+          запрос не отвалится по таймауту. Грузим асинхронно; страница
+          рисуется сразу, а page.tsx дожидается window.Telegram опросом с
+          дедлайном и умеет внятно сказать, что SDK так и не приехал.
+        */}
+        <script async src="https://telegram.org/js/telegram-web-app.js" />
       </head>
       <body className="min-h-full flex flex-col overflow-x-hidden">{children}</body>
     </html>
