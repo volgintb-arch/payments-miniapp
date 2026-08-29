@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '@/lib/hooks/use-api';
+import { todayLocalIso } from '@/lib/date';
 import { matchesSearch } from '@/lib/search';
 
 type CategoryGroup = {
@@ -47,7 +48,7 @@ export function IncomeForm({ onSuccess, chatId }: { onSuccess: () => void; chatI
   const [contractorName, setContractorName] = useState('');
 
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => todayLocalIso());
   const [description, setDescription] = useState('');
 
   const [submitting, setSubmitting] = useState(false);

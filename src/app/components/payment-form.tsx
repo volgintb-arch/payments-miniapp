@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '@/lib/hooks/use-api';
+import { todayLocalIso } from '@/lib/date';
 import { matchesSearch } from '@/lib/search';
 
 type Unit = { id: number; name: string };
@@ -65,7 +66,7 @@ export function PaymentForm({ onSuccess, chatId }: { onSuccess: () => void; chat
   const [safeId, setSafeId] = useState<number | null>(null);
 
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => todayLocalIso());
   const [description, setDescription] = useState('');
   const [cardNote, setCardNote] = useState('');
 

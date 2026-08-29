@@ -293,11 +293,28 @@ export async function POST(
   try {
     await adesk.updateTransaction(txId, adeskUpdates);
   } catch (err) {
-    // Adesk упал — откатываем Payment (splits уйдут каскадом).
-    await prisma.payment.delete({ where: { id: payment.id } });
-    console.error(`[uncategorized/assign] Adesk update failed for tx=${txId}, payment rolled back:`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    // Таймаут — особый случай: Adesk мог применить апдейт уже ПОСЛЕ того, как
+    // клиент отвалился. Удалять Payment тут нельзя (в Adesk tx осталась бы
+    // категоризированной и исчезла из «Неопознанных», а в БД её нет —
+    // повторить разнос невозможно). Оставляем Payment MATCHED: если апдейт
+    // не прошёл, tx просто останется без категории и вернётся во вкладку.
+    if (/timeout/i.test(msg)) {
+      console.error(`[uncategorized/assign] Adesk timeout for tx=${txId}, payment ${payment.id} left MATCHED (Adesk may have applied):`, msg);
+      return Response.json(
+        { ok: true, paymentId: payment.id, txId, warning: 'adesk_timeout_unconfirmed' },
+      );
+    }
+    // Явная ошибка — откатываем Payment (splits каскадом). delete под своим
+    // try/catch: если и он упал, логируем orphan, но не роняем ответ 500.
+    try {
+      await prisma.payment.delete({ where: { id: payment.id } });
+    } catch (delErr) {
+      console.error(`[uncategorized/assign] ORPHAN payment ${payment.id}: delete failed after Adesk error:`, delErr);
+    }
+    console.error(`[uncategorized/assign] Adesk update failed for tx=${txId}, payment rolled back:`, msg);
     return Response.json(
-      { error: err instanceof Error ? err.message : 'Adesk update failed' },
+      { error: msg || 'Adesk update failed' },
       { status: 502 },
     );
   }

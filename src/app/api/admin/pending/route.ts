@@ -31,8 +31,11 @@ async function handleGet(request: NextRequest) {
 
   const payments = await prisma.payment.findMany({
     where: {
+      // Наличные тоже показываем: раньше фильтр card-only прятал зависшие
+      // cash-платежи (createTransaction упал / safeId пуст) — они молча уходили
+      // в ORPHANED, и никто не видел, что расход не попал в Adesk. Кандидатов из
+      // банка для них не ищем (у наличных нет банковской операции для матча).
       status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
-      paymentMethod: 'card',
     },
     include: {
       user: { select: { firstName: true, lastName: true, telegramUsername: true } },
@@ -52,7 +55,10 @@ async function handleGet(request: NextRequest) {
     // карты могут пересекать юр.лица, защита через card-mask. Подробнее
     // см. комментарий у getMatcherBankAccountIds().
     const cardSuffix = extractCardSuffix(p.cardNote);
-    const bankAccountIds = await getMatcherBankAccountIds(p, cardSuffix);
+    // Наличные не матчатся с банковской операцией — кандидатов не ищем.
+    const bankAccountIds = p.paymentMethod === 'card'
+      ? await getMatcherBankAccountIds(p, cardSuffix)
+      : [];
 
     const paymentDate = new Date(p.date);
     // Окно покрывает и дату покупки, и дату подачи — иначе для платежа за

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/hooks/use-api';
+import { todayLocalIso } from '@/lib/date';
 import { matchesSearch } from '@/lib/search';
 
 type UncategorizedTx = {
@@ -489,7 +490,7 @@ function AssignModal({
 
     // DD.MM.YYYY → YYYY-MM-DD (для сохранения в Payment.date)
     const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(tx.date);
-    const dateIso = m ? `${m[3]}-${m[2]}-${m[1]}` : new Date().toISOString().split('T')[0];
+    const dateIso = m ? `${m[3]}-${m[2]}-${m[1]}` : todayLocalIso();
 
     setSubmitting(true);
     try {
