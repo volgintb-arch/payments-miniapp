@@ -7,22 +7,22 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
 import { extractCardSuffix, getMatcherBankAccountIds } from '@/lib/retro-match';
-
-const CRON_SECRET = process.env.CRON_SECRET || '';
+import { denyUnlessCronSecret } from '@/lib/api-helpers';
 
 export async function GET(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  if (CRON_SECRET) {
-    const auth = request.headers.get('authorization');
-    if (auth !== `Bearer ${CRON_SECRET}`) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  }
+  const denied = denyUnlessCronSecret(request);
+  if (denied) return denied;
 
   const { id } = await ctx.params;
-  const windowDays = Number(request.nextUrl.searchParams.get('window') || 7);
+  // Ограничиваем окно: без верхней границы большое значение раздувает запросы
+  // к Adesk по каждому счёту (potential DoS), NaN — отбрасываем в дефолт.
+  const rawWindow = Number(request.nextUrl.searchParams.get('window'));
+  const windowDays = Number.isFinite(rawWindow)
+    ? Math.min(30, Math.max(1, Math.trunc(rawWindow)))
+    : 7;
 
   const payment = await prisma.payment.findUnique({
     where: { id },

@@ -1,7 +1,33 @@
 // src/lib/api-helpers.ts
 import { NextRequest } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { verifyJwt } from './auth';
 import { prisma } from './db';
+
+// Constant-time сравнение строк. false и при разной длине (timingSafeEqual
+// бросает на буферах разного размера — длину при этом мы всё же раскрываем,
+// это приемлемо для секретов фиксированной длины).
+export function timingSafeStrEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  return timingSafeEqual(ba, bb);
+}
+
+// Гейт для машинных роутов (cron, служебные вебхуки), защищённых CRON_SECRET.
+// Fail-closed: пустой секрет — это мисконфиг, а не «пускать всех». Возвращает
+// Response (503 — секрет не задан; 401 — секрет неверный) либо null.
+export function denyUnlessCronSecret(request: Request): Response | null {
+  const secret = process.env.CRON_SECRET || '';
+  if (!secret) {
+    console.error('[auth] CRON_SECRET не задан — машинный роут закрыт (fail-closed)');
+    return Response.json({ error: 'Server misconfigured' }, { status: 503 });
+  }
+  const header = request.headers.get('authorization') || '';
+  return timingSafeStrEqual(header, `Bearer ${secret}`)
+    ? null
+    : Response.json({ error: 'Unauthorized' }, { status: 401 });
+}
 
 export type AuthUser = {
   userId: string;
@@ -96,6 +122,18 @@ export async function denyUnlessRole(
 export async function denyUnlessAuthed(request: NextRequest): Promise<Response | null> {
   if (hasCronSecret(request)) return null;
   const result = await requireAuth(request);
+  return result instanceof Response ? result : null;
+}
+
+// Строгий вариант БЕЗ обхода по CRON_SECRET. Для управления правами
+// (список пользователей, активация): машинный секрет крона лежит в конфиге
+// планировщика/CI, где круг доступа шире, чем у админов, и не должен давать
+// права администрировать пользователей.
+export async function denyUnlessRoleStrict(
+  request: NextRequest,
+  allowedRoles: string[],
+): Promise<Response | null> {
+  const result = await requireRole(request, allowedRoles);
   return result instanceof Response ? result : null;
 }
 

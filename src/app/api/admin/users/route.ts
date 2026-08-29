@@ -8,10 +8,10 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { denyUnlessRole } from '@/lib/api-helpers';
+import { denyUnlessRoleStrict } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
-  const denied = await denyUnlessRole(request, ['ADMIN']);
+  const denied = await denyUnlessRoleStrict(request, ['ADMIN']);
   if (denied) return denied;
 
   const pendingOnly = request.nextUrl.searchParams.get('pending') === '1';

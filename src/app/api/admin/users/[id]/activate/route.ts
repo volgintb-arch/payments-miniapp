@@ -11,13 +11,13 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { denyUnlessRole, badRequest } from '@/lib/api-helpers';
+import { denyUnlessRoleStrict, badRequest } from '@/lib/api-helpers';
 
 export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const denied = await denyUnlessRole(request, ['ADMIN']);
+  const denied = await denyUnlessRoleStrict(request, ['ADMIN']);
   if (denied) return denied;
 
   const { id } = await ctx.params;

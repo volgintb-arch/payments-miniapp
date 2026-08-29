@@ -5,12 +5,16 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
-import { requireRole } from '@/lib/api-helpers';
+import { requireRole, timingSafeStrEqual } from '@/lib/api-helpers';
 
 export async function POST(request: NextRequest) {
-  // Доступ по ADMIN_SECRET или JWT с ролью ADMIN
-  const secret = request.headers.get('x-admin-secret');
-  if (secret !== process.env.ADMIN_SECRET) {
+  // Доступ по ADMIN_SECRET или JWT с ролью ADMIN. Пустой ADMIN_SECRET не даёт
+  // обхода: раньше пустой заголовок совпадал с пустым env и пропускал
+  // requireRole. Теперь секрет засчитывается только если он непуст.
+  const adminSecret = process.env.ADMIN_SECRET || '';
+  const provided = request.headers.get('x-admin-secret') || '';
+  const bySecret = adminSecret !== '' && timingSafeStrEqual(provided, adminSecret);
+  if (!bySecret) {
     const auth = await requireRole(request, ['ADMIN']);
     if (auth instanceof Response) return auth;
   }

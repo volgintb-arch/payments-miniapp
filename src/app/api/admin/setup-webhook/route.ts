@@ -5,18 +5,14 @@
 
 import { NextRequest } from 'next/server';
 import { adesk } from '@/lib/adesk/client';
+import { denyUnlessCronSecret } from '@/lib/api-helpers';
 
-const CRON_SECRET = process.env.CRON_SECRET || '';
 const WEBHOOK_SECRET = process.env.ADESK_WEBHOOK_SECRET || '';
 const PUBLIC_URL = process.env.PUBLIC_URL || 'https://pay.omgevent.ru';
 
 export async function POST(request: NextRequest) {
-  if (CRON_SECRET) {
-    const auth = request.headers.get('authorization');
-    if (auth !== `Bearer ${CRON_SECRET}`) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  }
+  const denied = denyUnlessCronSecret(request);
+  if (denied) return denied;
 
   const existing = await adesk.listWebhooks();
 
@@ -46,12 +42,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  if (CRON_SECRET) {
-    const auth = request.headers.get('authorization');
-    if (auth !== `Bearer ${CRON_SECRET}`) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  }
+  const denied = denyUnlessCronSecret(request);
+  if (denied) return denied;
   const existing = await adesk.listWebhooks();
   return Response.json(existing);
 }

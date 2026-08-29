@@ -9,20 +9,30 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { processRetroMatch } from '@/lib/retro-match';
+import { timingSafeStrEqual } from '@/lib/api-helpers';
 
 const WEBHOOK_SECRET = process.env.ADESK_WEBHOOK_SECRET || '';
 
 export async function POST(request: NextRequest) {
-  if (WEBHOOK_SECRET) {
-    const fromQuery = request.nextUrl.searchParams.get('secret');
-    const fromHeader = request.headers.get('x-webhook-secret');
-    if (fromQuery !== WEBHOOK_SECRET && fromHeader !== WEBHOOK_SECRET) {
-      return Response.json({ error: 'Invalid secret' }, { status: 401 });
-    }
+  // Fail-closed: пустой секрет — мисконфиг, а не «принимать всех». Иначе
+  // неаутентифицированный POST запускает processRetroMatch и мутирует
+  // финзаписи в Adesk. Секрет всё ещё принимается из query, потому что Adesk
+  // зовёт зарегистрированный URL и не шлёт кастомных заголовков (см.
+  // setup-webhook); подписи тела payload Adesk не предоставляет.
+  if (!WEBHOOK_SECRET) {
+    console.error('[adesk webhook] ADESK_WEBHOOK_SECRET не задан — вебхук закрыт');
+    return Response.json({ error: 'Server misconfigured' }, { status: 503 });
+  }
+  const fromQuery = request.nextUrl.searchParams.get('secret') || '';
+  const fromHeader = request.headers.get('x-webhook-secret') || '';
+  if (!timingSafeStrEqual(fromQuery, WEBHOOK_SECRET) && !timingSafeStrEqual(fromHeader, WEBHOOK_SECRET)) {
+    return Response.json({ error: 'Invalid secret' }, { status: 401 });
   }
 
   const body = await request.json().catch(() => null);
-  console.log('[adesk webhook]', JSON.stringify(body)?.slice(0, 500));
+  // Логируем только размер, не содержимое: payload может нести реквизиты
+  // операций, а секрет вебхука лежит в query URL и попадает в логи.
+  console.log('[adesk webhook] received, bytes:', JSON.stringify(body)?.length ?? 0);
 
   // Пытаемся вытащить сумму из payload (разные варианты схем Adesk)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

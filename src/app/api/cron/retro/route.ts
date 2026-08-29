@@ -8,17 +8,13 @@ import { prisma } from '@/lib/db';
 import { processRetroMatch } from '@/lib/retro-match';
 import { adesk } from '@/lib/adesk/client';
 import { sendToGroup } from '@/lib/telegram';
+import { denyUnlessCronSecret } from '@/lib/api-helpers';
 
-const CRON_SECRET = process.env.CRON_SECRET || '';
 const STALE_NOTIFY_HOURS = 24;
 
 export async function GET(request: Request) {
-  if (CRON_SECRET) {
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${CRON_SECRET}`) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  }
+  const denied = denyUnlessCronSecret(request);
+  if (denied) return denied;
 
   const pendingPayments = await prisma.payment.findMany({
     where: { status: 'PENDING_RETRO' },
