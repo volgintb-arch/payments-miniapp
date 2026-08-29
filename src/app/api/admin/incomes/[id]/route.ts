@@ -4,7 +4,7 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { adesk } from '@/lib/adesk/client';
+import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
 import { denyUnlessRole } from '@/lib/api-helpers';
 
 
@@ -23,7 +23,9 @@ export async function POST(
   }
 
   try {
-    const res = await adesk.createTransaction({
+    // Идемпотентно: повтор после таймаута (когда приход в Adesk фактически
+    // создался) найдёт существующую транзакцию, а не задвоит приход.
+    const { txId } = await createTransactionIdempotent({
       amount: Number(income.amount),
       date: income.date.toISOString().split('T')[0],
       type: 'income',
@@ -33,13 +35,10 @@ export async function POST(
       contractorId: income.adeskContractorId ?? undefined,
       description: income.description ?? undefined,
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resAny = res as any;
-    const txId = resAny.transaction?.id || resAny.transactions?.[0]?.id || resAny.id;
     if (!txId) {
       await prisma.cashIncome.update({ where: { id }, data: { status: 'FAILED' } });
       return Response.json(
-        { error: 'Adesk did not return transaction id', response: res },
+        { error: 'Adesk did not return transaction id' },
         { status: 502 },
       );
     }

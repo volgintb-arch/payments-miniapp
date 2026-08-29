@@ -94,13 +94,17 @@ async function request<T>(
         `Adesk вернул не-JSON (status ${res.status}). Скорее всего временный сбой/rate-limit.`,
       );
     }
-    if (data.success === false) {
+    // Проверяем и HTTP-статус, и тело. Раньше смотрели только success===false:
+    // ответ 4xx/5xx с JSON без этого поля трактовался как успех, callers
+    // читали transactions===undefined и «решали», что данных нет, а cash-путь
+    // крона уходил в no_id с повторным созданием (дубль расхода).
+    if (!res.ok || data.success === false) {
       console.error(
-        `[adesk ${method} ${endpoint}] success:false`,
+        `[adesk ${method} ${endpoint}] HTTP ${res.status} / success:${data.success}`,
         JSON.stringify({ requestBody: opts.body, response: data }),
       );
       throw new Error(
-        `Adesk API error: ${data.message || data.errorCode || JSON.stringify(data)}`,
+        `Adesk API error (HTTP ${res.status}): ${data.message || data.errorCode || JSON.stringify(data)}`,
       );
     }
     return data;

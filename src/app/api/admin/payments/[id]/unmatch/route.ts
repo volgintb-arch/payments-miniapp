@@ -34,7 +34,7 @@ export async function POST(
 
   const payment = await prisma.payment.findUnique({
     where: { id },
-    select: { id: true, status: true, adeskConfirmedTransactionId: true },
+    select: { id: true, status: true, adeskConfirmedTransactionId: true, paymentMethod: true },
   });
   if (!payment) return Response.json({ error: 'Payment not found' }, { status: 404 });
 
@@ -45,12 +45,32 @@ export async function POST(
     );
   }
 
+  // Наличные привязываются через СОЗДАНИЕ транзакции в Adesk (крон/POST), а не
+  // через матч с существующей. Unmatch наличного вернул бы платёж в очередь, и
+  // следующий крон создал бы ВТОРУЮ транзакцию на ту же сумму — дубль расхода.
+  // Компенсации (удаления созданной tx) у нас нет, поэтому запрещаем.
+  if (payment.paymentMethod === 'cash') {
+    return Response.json(
+      {
+        error:
+          'Наличный платёж отвязать нельзя: он создал транзакцию в Adesk, и ' +
+          'повторная обработка задвоила бы расход. Правьте операцию в Adesk вручную.',
+      },
+      { status: 409 },
+    );
+  }
+
   const releasedTxId = payment.adeskConfirmedTransactionId;
 
+  // Ставим NEEDS_REVIEW, а не PENDING_RETRO: иначе крон тут же снова находит
+  // эту же tx единственным кандидатом по сумме/карте и восстанавливает ту же
+  // (ошибочную) привязку до того, как админ привяжет правильный платёж.
+  // Освобождённую tx подберёт правильный PENDING_RETRO-платёж; этот — ждёт
+  // ручного manual-match.
   await prisma.payment.update({
     where: { id },
     data: {
-      status: 'PENDING_RETRO',
+      status: 'NEEDS_REVIEW',
       adeskConfirmedTransactionId: null,
       matchedAt: null,
     },

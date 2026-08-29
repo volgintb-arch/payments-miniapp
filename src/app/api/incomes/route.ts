@@ -4,7 +4,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
-import { adesk } from '@/lib/adesk/client';
+import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
 import { sendToGroup } from '@/lib/telegram';
 
 export async function GET(request: NextRequest) {
@@ -51,6 +51,27 @@ export async function POST(request: NextRequest) {
   if (!adeskCategoryId) return badRequest('adeskCategoryId is required');
   if (!adeskProjectId) return badRequest('Выберите проект');
   if (!description || !String(description).trim()) return badRequest('Заполните описание');
+
+  // Анти-дубль: раньше приходы вообще не защищались, и повторный тап / ретрай
+  // после таймаута создавал два прихода в Adesk. Best-effort окно 5 минут по
+  // ключевым полям (полную гонку закрыл бы идемпотентный ключ с unique-индексом).
+  const recentDup = await prisma.cashIncome.findFirst({
+    where: {
+      userId: auth.userId,
+      amount: Number(amount),
+      date: new Date(date),
+      adeskSafeId: Number(safeId),
+      description: description || null,
+      createdAt: { gte: new Date(Date.now() - 5 * 60 * 1000) },
+    },
+    select: { id: true },
+  });
+  if (recentDup) {
+    return Response.json(
+      { error: 'Похожий приход только что создан. Проверьте историю, прежде чем повторять.' },
+      { status: 409 },
+    );
+  }
 
   async function getContractorName(id: number | null | undefined): Promise<string | null> {
     if (!id) return null;
@@ -102,8 +123,11 @@ export async function POST(request: NextRequest) {
 
   sendToGroup(tgText, chatId || undefined).catch(() => {});
 
+  // Идемпотентное создание: при таймауте+ретрае найдём уже созданную
+  // транзакцию по счёту/дате/сумме/описанию, а не задвоим приход.
+  let finalStatus: 'MATCHED' | 'FAILED' = 'FAILED';
   try {
-    const res = await adesk.createTransaction({
+    const { txId } = await createTransactionIdempotent({
       amount: Number(amount),
       date,
       type: 'income',
@@ -113,16 +137,14 @@ export async function POST(request: NextRequest) {
       contractorId: adeskContractorId ? Number(adeskContractorId) : undefined,
       description: description || undefined,
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resAny = res as any;
-    const txId = resAny.transaction?.id || resAny.transactions?.[0]?.id || resAny.id;
     if (txId) {
       await prisma.cashIncome.update({
         where: { id: income.id },
         data: { status: 'MATCHED', adeskTransactionId: txId, matchedAt: new Date() },
       });
+      finalStatus = 'MATCHED';
     } else {
-      console.error(`[income] Adesk did not return id for ${income.id}`, res);
+      console.error(`[income] Adesk did not return id for ${income.id}`);
       await prisma.cashIncome.update({
         where: { id: income.id },
         data: { status: 'FAILED' },
@@ -136,8 +158,10 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Возвращаем актуальный статус, а не stale 'PENDING' из момента создания —
+  // иначе пользователь считает, что приход прошёл, хотя он FAILED.
   return Response.json(
-    { income: { ...income, amount: Number(income.amount) } },
+    { income: { ...income, amount: Number(income.amount), status: finalStatus } },
     { status: 201 },
   );
 }

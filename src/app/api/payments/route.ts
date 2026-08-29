@@ -9,10 +9,10 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireAuth, badRequest } from '@/lib/api-helpers';
+import { requireAuth, badRequest, isUniqueViolation } from '@/lib/api-helpers';
 import { processRetroMatch } from '@/lib/retro-match';
 import { sendToGroup } from '@/lib/telegram';
-import { adesk } from '@/lib/adesk/client';
+import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
 
 function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
   if (u.telegramUsername) return `@${u.telegramUsername}`;
@@ -309,9 +309,11 @@ export async function POST(request: NextRequest) {
 
   if (isCash) {
     // Наличные — создаём транзакцию в Adesk сразу (await).
-    // При ошибке платёж остаётся в PENDING_RETRO, крон подберёт.
+    // При ошибке платёж остаётся в PENDING_RETRO, крон подберёт. Создание
+    // идемпотентно: если ответ пришёл после таймаута, повторная попытка (здесь
+    // или в кроне) найдёт уже созданную транзакцию, а не задвоит расход.
     try {
-      const res = await adesk.createTransaction({
+      const { txId } = await createTransactionIdempotent({
         amount: Number(amount),
         date,
         type: 'outcome',
@@ -330,20 +332,26 @@ export async function POST(request: NextRequest) {
             }))
           : undefined,
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const resAny = res as any;
-      const txId = resAny.transaction?.id || resAny.transactions?.[0]?.id || resAny.id;
       if (txId) {
-        await prisma.payment.update({
-          where: { id: payment.id },
-          data: {
-            status: 'MATCHED',
-            adeskConfirmedTransactionId: txId,
-            matchedAt: new Date(),
-          },
-        });
+        try {
+          await prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+              status: 'MATCHED',
+              adeskConfirmedTransactionId: txId,
+              matchedAt: new Date(),
+            },
+          });
+        } catch (err) {
+          // tx уже привязана к другому платежу (@unique) — оставляем этот в
+          // PENDING_RETRO, крон/админ разберут, дубль в Adesk не создаём.
+          if (!isUniqueViolation(err)) throw err;
+          console.error(`[payments] tx ${txId} already bound, payment ${payment.id} left pending`);
+        }
       } else {
-        console.error(`Cash transaction: Adesk did not return id for payment ${payment.id}`, res);
+        // Создано, но id не распарсился — не оставляем «созданным вслепую»:
+        // крон найдёт транзакцию по описанию и привяжет (или отправит в разбор).
+        console.error(`Cash transaction: Adesk did not return id for payment ${payment.id}`);
       }
     } catch (err) {
       console.error(`Cash transaction creation failed for payment ${payment.id}:`, err);
