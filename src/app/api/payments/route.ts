@@ -53,7 +53,21 @@ export async function GET(request: NextRequest) {
     where.unitId = { in: userUnits.map((u) => u.unitId) };
   }
 
-  if (unitId) where.unitId = Number(unitId);
+  // unitId из query раньше БЕЗУСЛОВНО перезаписывал фильтр по юнитам — APPROVER
+  // мог передать ?unitId=<чужой> и прочитать платежи любого юнита. Теперь для
+  // не-ADMIN сверяем с доступными (EMPLOYEE и так ограничен своим userId).
+  if (unitId) {
+    const requested = Number(unitId);
+    if (auth.role === 'ADMIN' || auth.role === 'EMPLOYEE') {
+      where.unitId = requested;
+    } else {
+      const allowed = (where.unitId as { in?: number[] } | undefined)?.in ?? [];
+      if (!allowed.includes(requested)) {
+        return Response.json({ error: 'No access to this unit' }, { status: 403 });
+      }
+      where.unitId = requested;
+    }
+  }
   if (status) where.status = status;
 
   const [payments, total] = await Promise.all([

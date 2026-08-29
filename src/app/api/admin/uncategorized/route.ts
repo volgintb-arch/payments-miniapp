@@ -59,7 +59,11 @@ async function handleGet(request: NextRequest) {
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 180
     ? daysParam
     : DEFAULT_DAYS;
-  const withNonCard = request.nextUrl.searchParams.get('withNonCard') === '1';
+  // withNonCard=1 отключал фильтр «только карточные» и показывал ЛЮБОМУ
+  // сотруднику все некарточные расходы (переводы бухгалтерии, оплаты
+  // контрагентам) — их не прикрывает даже EXCLUDED_CARDS (нет маски карты).
+  // UI этот параметр не использует, поэтому поддержку убираем: всегда card-only.
+  const withNonCard = false;
   const noCache = request.nextUrl.searchParams.get('nocache') === '1';
 
   const cacheKey = `${days}|${withNonCard ? 1 : 0}`;

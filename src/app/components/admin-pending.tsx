@@ -465,7 +465,7 @@ function ActivateUserModal({
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<{ units: Unit[] }>('/api/units')
+    apiFetch<{ units: Unit[] }>('/api/admin/units')
       .then((res) => setUnits(res.units))
       .catch((e) => setErr(e instanceof Error ? e.message : 'Не удалось загрузить юниты'))
       .finally(() => setLoading(false));
