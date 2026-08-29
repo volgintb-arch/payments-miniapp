@@ -32,23 +32,44 @@ export type MatchResult =
 const AMOUNT_EPSILON = 0.01;
 const DATE_WINDOW_DAYS = 4;
 const VENDOR_PREFIX_LEN = 40;
+// Верхний предел окна поиска: старая покупка + дефолтная дата = сегодня иначе
+// раздували бы запрос к Adesk на месяцы по каждому счёту.
+const MAX_WINDOW_DAYS = 45;
+// Авто-MATCH единственного кандидата разрешаем только если его дата рядом с
+// датой покупки. Дальний край растянутого окна — на ручное подтверждение.
+const AUTOMATCH_NEAR_DAYS = 2;
+
+// tx.date приходит как "DD.MM.YYYY". true, если дата в пределах days от target.
+function txDateWithinDays(dateStr: string | undefined, target: Date, days: number): boolean {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(dateStr || '');
+  if (!m) return false;
+  const txDate = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return Math.abs(txDate.getTime() - target.getTime()) / 86_400_000 <= days;
+}
 
 // Карточные операции в Adesk содержат маску карты (220445******5443)
 // или слово "Терминал" в описании. Прямые переводы со счёта (платёжки
 // бухгалтера) их не содержат и матчиться не должны.
 export function isCardTransaction(description?: string | null): boolean {
   if (!description) return false;
-  return /\d{4,6}\*+\d{2,4}/.test(description) || /Терминал/i.test(description);
+  return (
+    /\d{4,6}\*+\d{2,4}/.test(description) || // 220445******5443
+    /\*{2,}\s?\d{4}/.test(description) ||      // ****5443 / **** 5443 (маски др. банков)
+    /Терминал/i.test(description)
+  );
 }
 
-// Из cardNote ("2273", "Сбер *2273", "карта 2273") вытаскиваем последние
-// 4 цифры — это суффикс карты, на которой делался платёж.
+// Из cardNote ("2273", "Сбер *2273", "карта 2273") вытаскиваем 4 цифры карты.
+// Берём только группу РОВНО из 4 цифр: иначе телефон ("...9998877" → "8877")
+// или длинный номер счёта давали ложный суффикс, который молча ломал матчинг
+// (все кандидаты отфильтровывались) и расширял поиск на все счета всех юрлиц.
 export function extractCardSuffix(cardNote?: string | null): string | null {
   if (!cardNote) return null;
-  const digits = cardNote.match(/\d+/g);
-  if (!digits) return null;
-  const last = digits[digits.length - 1];
-  return last.length >= 4 ? last.slice(-4) : null;
+  const groups = cardNote.match(/\d+/g);
+  if (!groups) return null;
+  const four = groups.filter((g) => g.length === 4);
+  if (four.length === 0) return null;
+  return four[four.length - 1];
 }
 
 // Описание Adesk-операции содержит маску карты вида "220445******5443".
@@ -129,12 +150,21 @@ export async function findMatchingTransaction(
   const rangeEnd = new Date(Math.max(dateMs, createdMs));
   rangeEnd.setDate(rangeEnd.getDate() + DATE_WINDOW_DAYS);
 
+  // Кап окна: не даём ему растягиваться на месяцы.
+  const minStart = new Date(rangeEnd);
+  minStart.setDate(minStart.getDate() - MAX_WINDOW_DAYS);
+  if (rangeStart < minStart) rangeStart.setTime(minStart.getTime());
+
   const fmt = (d: Date) => d.toISOString().split('T')[0];
 
   // Идём пакетами по 5 счетов вместо all-at-once-14, иначе Adesk
   // массово таймаутит запросы (видели 15s+ ответы при rematch). allSettled
   // в пакете чтобы один зависший счёт не валил остальные.
   const allTxs: AdeskTransaction[] = [];
+  // Если хоть один счёт не ответил, выборка неполная — тогда авто-MATCH
+  // запрещаем (иначе можно привязать чужую tx, потому что настоящая была на
+  // упавшем счёте). Платёж останется в очереди и доберётся следующим циклом.
+  let hadFailure = false;
   const CONCURRENCY = 5;
   for (let i = 0; i < bankAccountIds.length; i += CONCURRENCY) {
     const batch = bankAccountIds.slice(i, i + CONCURRENCY);
@@ -153,6 +183,7 @@ export async function findMatchingTransaction(
       if (r.status === 'fulfilled' && r.value.transactions) {
         allTxs.push(...r.value.transactions);
       } else if (r.status === 'rejected') {
+        hadFailure = true;
         console.error(`[match] listTransactions failed for payment ${paymentId}:`,
           r.reason instanceof Error ? r.reason.message : r.reason);
       }
@@ -180,11 +211,22 @@ export async function findMatchingTransaction(
   const availableSingles = await filterTaken(singleCandidates, paymentId);
   if (availableSingles.length === 1) {
     const tx = uniqueTxs.get(availableSingles[0]);
-    return {
-      status: 'matched',
-      transactionIds: [availableSingles[0]],
-      existingDescription: tx?.description || '',
-    };
+    // Авто-MATCH только когда уверены: есть фильтр по 4 цифрам карты, выборка
+    // полная, и дата операции рядом с датой покупки. Иначе — на ручное
+    // подтверждение: единственный кандидат в широком окне без суффикса
+    // (круглая сумма 500/1000₽) слишком легко оказывается чужой операцией.
+    const confident =
+      cardSuffix !== null &&
+      !hadFailure &&
+      txDateWithinDays(tx?.date, new Date(payment.date), AUTOMATCH_NEAR_DAYS);
+    if (confident) {
+      return {
+        status: 'matched',
+        transactionIds: [availableSingles[0]],
+        existingDescription: tx?.description || '',
+      };
+    }
+    return { status: 'needs_review', candidates: [[availableSingles[0]]] };
   }
   if (availableSingles.length > 1) {
     return { status: 'needs_review', candidates: availableSingles.map((id) => [id]) };
@@ -370,6 +412,10 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
       },
     });
 
+    // Сначала снимаем прежние НЕразрешённые конфликты этого платежа: иначе
+    // каждый повторный прогон матчера (админский rematch включает NEEDS_REVIEW
+    // в выборку) плодил бы ещё одну запись с теми же кандидатами.
+    await prisma.matchConflict.deleteMany({ where: { paymentId, resolvedAt: null } });
     await prisma.matchConflict.create({
       data: {
         id: globalThis.crypto.randomUUID(),

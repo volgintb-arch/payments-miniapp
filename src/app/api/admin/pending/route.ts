@@ -42,7 +42,12 @@ async function handleGet(request: NextRequest) {
     orderBy: { createdAt: 'desc' },
   });
 
-  const out = await Promise.all(payments.map(async (p) => {
+  // Общий флаг: хоть у одного платежа выборка кандидатов вышла неполной
+  // (часть счетов Adesk не ответила) — фронт покажет предупреждение, чтобы
+  // админ не принял «нет кандидатов» за «операции в банке нет».
+  let anyIncomplete = false;
+
+  const processPayment = async (p: (typeof payments)[number]) => {
     // Шире чем UnitBankAccount, если у платежа есть 4-значный cardSuffix —
     // карты могут пересекать юр.лица, защита через card-mask. Подробнее
     // см. комментарий у getMatcherBankAccountIds().
@@ -71,45 +76,55 @@ async function handleGet(request: NextRequest) {
       bankAccountId: number;
     }> = [];
 
-    // Параллельно опрашиваем все счета юнита, чтобы не множить задержку
-    const baResults = await Promise.allSettled(
-      bankAccountIds.map((baId) =>
-        adesk
-          .listTransactions({
-            status: 'completed',
-            type: 'outcome',
-            bankAccount: baId,
-            rangeStart: fmt(rangeStart),
-            rangeEnd: fmt(rangeEnd),
-          })
-          .then((res) => ({ baId, txs: res.transactions || [] })),
-      ),
-    );
-    for (const r of baResults) {
-      if (r.status === 'rejected') {
-        console.error(
-          `[admin/pending] listTransactions failed: payment=${p.id}:`,
-          r.reason instanceof Error ? r.reason.message : r.reason,
-        );
-        continue;
-      }
-      for (const t of r.value.txs) {
-        if (!isCardTransaction(t.description)) continue;
-        if (!txMatchesCard(t.description, cardSuffix)) continue;
-        const amt = Math.abs(Number(t.amount));
-        const diff = Math.abs(amt - target);
-        if (diff <= AMOUNT_TOLERANCE) {
-          candidates.push({
-            txId: t.id,
-            amount: amt,
-            date: t.date,
-            diff,
-            description: t.description || '',
-            bankAccountId: r.value.baId,
-          });
+    // Опрашиваем счета пакетами по 5 (как матчер), а не все сразу: при 14
+    // счетах × N платежей all-at-once давал сотни одновременных запросов и
+    // Adesk массово таймаутил. incomplete=true, если часть счетов не ответила —
+    // тогда список кандидатов неполный, фронт должен это показать.
+    let incomplete = false;
+    const ACCOUNT_CONCURRENCY = 5;
+    for (let i = 0; i < bankAccountIds.length; i += ACCOUNT_CONCURRENCY) {
+      const batch = bankAccountIds.slice(i, i + ACCOUNT_CONCURRENCY);
+      const baResults = await Promise.allSettled(
+        batch.map((baId) =>
+          adesk
+            .listTransactions({
+              status: 'completed',
+              type: 'outcome',
+              bankAccount: baId,
+              rangeStart: fmt(rangeStart),
+              rangeEnd: fmt(rangeEnd),
+            })
+            .then((res) => ({ baId, txs: res.transactions || [] })),
+        ),
+      );
+      for (const r of baResults) {
+        if (r.status === 'rejected') {
+          incomplete = true;
+          console.error(
+            `[admin/pending] listTransactions failed: payment=${p.id}:`,
+            r.reason instanceof Error ? r.reason.message : r.reason,
+          );
+          continue;
+        }
+        for (const t of r.value.txs) {
+          if (!isCardTransaction(t.description)) continue;
+          if (!txMatchesCard(t.description, cardSuffix)) continue;
+          const amt = Math.abs(Number(t.amount));
+          const diff = Math.abs(amt - target);
+          if (diff <= AMOUNT_TOLERANCE) {
+            candidates.push({
+              txId: t.id,
+              amount: amt,
+              date: t.date,
+              diff,
+              description: t.description || '',
+              bankAccountId: r.value.baId,
+            });
+          }
         }
       }
     }
+    if (incomplete) anyIncomplete = true;
 
     const seen = new Set<number>();
     const uniq = candidates.filter((c) => {
@@ -178,7 +193,16 @@ async function handleGet(request: NextRequest) {
         takenByPaymentId: takenMap.get(c.txId) || null,
       })),
     };
-  }));
+  };
+
+  // Платежи тоже обрабатываем пакетами (по 3), а не все разом: иначе 3×14
+  // счетов = сотни одновременных запросов к Adesk.
+  const out: Awaited<ReturnType<typeof processPayment>>[] = [];
+  const PAYMENT_CONCURRENCY = 3;
+  for (let i = 0; i < payments.length; i += PAYMENT_CONCURRENCY) {
+    const batch = payments.slice(i, i + PAYMENT_CONCURRENCY);
+    out.push(...(await Promise.all(batch.map(processPayment))));
+  }
 
   // Приходы: все, что не в MATCHED — висящие (FAILED, PENDING)
   const failedIncomes = await prisma.cashIncome.findMany({
@@ -207,5 +231,5 @@ async function handleGet(request: NextRequest) {
     }),
   );
 
-  return Response.json({ payments: out, incomes: incomesOut });
+  return Response.json({ payments: out, incomes: incomesOut, candidatesIncomplete: anyIncomplete });
 }

@@ -58,6 +58,11 @@ async function request<T>(
     }
   }
 
+  // GET безопасно ретраить на сетевых сбоях/таймауте/5xx (частые у Adesk):
+  // это чтение, повтор идемпотентен. Мутации (POST) ретраим только на 429,
+  // чтобы не задваивать операции при таймауте после фактического создания.
+  const retryTransient = method === 'GET';
+
   for (let attempt = 0; attempt <= 2; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -66,7 +71,13 @@ async function request<T>(
       res = await fetch(url.toString(), { method, headers, body, signal: controller.signal });
     } catch (err) {
       clearTimeout(timeoutId);
-      if (err instanceof Error && err.name === 'AbortError') {
+      const isAbort = err instanceof Error && err.name === 'AbortError';
+      // Сетевой сбой/таймаут GET — повторяем с задержкой.
+      if (retryTransient && attempt < 2) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+        continue;
+      }
+      if (isAbort) {
         throw new Error(`Adesk timeout (>${FETCH_TIMEOUT_MS}ms) on ${method} ${endpoint}`);
       }
       throw err;
@@ -79,6 +90,12 @@ async function request<T>(
         continue;
       }
       throw new Error(`Adesk rate limit exceeded after ${attempt + 1} attempts`);
+    }
+
+    // 5xx на GET — временный сбой апстрима, повторяем.
+    if (retryTransient && res.status >= 500 && attempt < 2) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+      continue;
     }
 
     const text = await res.text();
