@@ -7,7 +7,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
-import { denyUnlessRole } from '@/lib/api-helpers';
+import { denyUnlessRole, isUniqueViolation } from '@/lib/api-helpers';
 
 
 export async function POST(
@@ -29,6 +29,23 @@ export async function POST(
   if (txIds.length === 0) {
     return Response.json(
       { error: 'transactionId or transactionIds[] is required' },
+      { status: 400 },
+    );
+  }
+
+  // Модель хранит ровно одну привязку (adeskConfirmedTransactionId @unique).
+  // Привязка к нескольким транзакциям раньше: (а) записывала в БД только
+  // первую — остальные оставались «ничьими» и попадали в двойной учёт;
+  // (б) для сплит-платежа слала parts на полную сумму в КАЖДУЮ tx; (в) при
+  // сбое на второй tx откатывала БД, но первая оставалась размеченной в Adesk.
+  // Пока нет модели связи payment↔много-tx — принимаем только одну.
+  if (txIds.length > 1) {
+    return Response.json(
+      {
+        error:
+          'Привязка к нескольким транзакциям временно недоступна (приводила к ' +
+          'двойному учёту). Привяжите платёж к одной операции.',
+      },
       { status: 400 },
     );
   }
@@ -76,19 +93,31 @@ export async function POST(
   // CAS-claim: атомарно переводим в MATCHED ДО вызова Adesk.
   // Если параллельный rematch / другой админ уже сматчил — выходим без
   // повторного Adesk-апдейта, иначе описание получит дубль префикса.
-  const claim = await prisma.payment.updateMany({
-    where: {
-      id,
-      status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
-    },
-    data: {
-      status: 'MATCHED',
-      adeskConfirmedTransactionId: txIds[0],
-      matchedAt: new Date(),
-      retroAttempts: { increment: 1 },
-      lastRetroAttemptAt: new Date(),
-    },
-  });
+  let claim;
+  try {
+    claim = await prisma.payment.updateMany({
+      where: {
+        id,
+        status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
+      },
+      data: {
+        status: 'MATCHED',
+        adeskConfirmedTransactionId: txIds[0],
+        matchedAt: new Date(),
+        retroAttempts: { increment: 1 },
+        lastRetroAttemptAt: new Date(),
+      },
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      // Ту же транзакцию забрал другой платёж между takenByOthers и claim.
+      return Response.json(
+        { error: 'Some transactions already bound to other payments' },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
   if (claim.count === 0) {
     return Response.json(
       { error: 'Payment already matched by another process', paymentId: id },

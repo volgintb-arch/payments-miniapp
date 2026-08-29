@@ -102,12 +102,13 @@ export function AdminPending() {
     load();
   }, [load]);
 
+  // Одиночный выбор: платёж привязывается ровно к одной операции (модель
+  // хранит одну привязку, multi-tx приводил к двойному учёту). Повторный клик
+  // по выбранной — снимает выбор.
   const toggleCandidate = (paymentId: string, txId: number) => {
     setSelected((prev) => {
-      const current = new Set(prev[paymentId] || []);
-      if (current.has(txId)) current.delete(txId);
-      else current.add(txId);
-      return { ...prev, [paymentId]: current };
+      const already = prev[paymentId]?.has(txId);
+      return { ...prev, [paymentId]: already ? new Set<number>() : new Set([txId]) };
     });
   };
 

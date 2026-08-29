@@ -137,6 +137,18 @@ export async function denyUnlessRoleStrict(
   return result instanceof Response ? result : null;
 }
 
+// Prisma «Unique constraint failed» (P2002). Используется как гонка-гарантия
+// на adeskConfirmedTransactionId: если два процесса пытаются привязать одну
+// банковскую операцию, второй получит P2002 — и это трактуется как «занято».
+export function isUniqueViolation(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    (err as { code?: string }).code === 'P2002'
+  );
+}
+
 export function badRequest(message: string) {
   return Response.json({ error: message }, { status: 400 });
 }

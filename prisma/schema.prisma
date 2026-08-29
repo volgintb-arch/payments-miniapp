@@ -155,7 +155,12 @@ model Payment {
 
   status                      PaymentStatus @default(PENDING_RETRO)
 
-  adeskConfirmedTransactionId Int?
+  // @unique гарантирует на уровне БД, что одна банковская операция Adesk не
+  // будет привязана к двум платежам. В Postgres обычный unique-индекс считает
+  // NULL-ы различными, поэтому множество непривязанных платежей (NULL) не
+  // конфликтует. ВАЖНО: перед применением на проде вычистить существующие
+  // дубли — prisma/sql/dedup-adesk-tx.sql.
+  adeskConfirmedTransactionId Int?          @unique
 
   retroAttempts               Int           @default(0)
   lastRetroAttemptAt          DateTime?

@@ -21,6 +21,7 @@
 
 import { prisma } from './db';
 import { adesk } from './adesk/client';
+import { isUniqueViolation } from './api-helpers';
 import type { AdeskTransaction } from './adesk/types';
 
 export type MatchResult =
@@ -297,19 +298,39 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
       // платёж — updateMany вернёт count=0, мы выходим без Adesk-апдейта.
       // Без этого было: оба процесса видели PENDING_RETRO, оба дёргали Adesk,
       // и описание получало двойной префикс «X | X | …».
-      const claim = await prisma.payment.updateMany({
-        where: {
-          id: paymentId,
-          status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
-        },
-        data: {
-          status: 'MATCHED',
-          adeskConfirmedTransactionId: result.transactionIds[0],
-          matchedAt: new Date(),
-          retroAttempts: { increment: 1 },
-          lastRetroAttemptAt: new Date(),
-        },
-      });
+      let claim;
+      try {
+        claim = await prisma.payment.updateMany({
+          where: {
+            id: paymentId,
+            status: { in: ['PENDING_RETRO', 'NEEDS_REVIEW', 'ORPHANED'] },
+          },
+          data: {
+            status: 'MATCHED',
+            adeskConfirmedTransactionId: result.transactionIds[0],
+            matchedAt: new Date(),
+            retroAttempts: { increment: 1 },
+            lastRetroAttemptAt: new Date(),
+          },
+        });
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          // Ту же транзакцию уже забрал ДРУГОЙ платёж (гонка cron/webhook/
+          // rematch). @unique не дал двойную привязку. Не трогаем Adesk,
+          // помечаем на ручной разбор, чтобы платёж не крутился в матче вечно.
+          console.log(`[match] tx ${result.transactionIds[0]} already bound to another payment — needs review`);
+          await prisma.payment.update({
+            where: { id: paymentId },
+            data: {
+              status: 'NEEDS_REVIEW',
+              retroAttempts: { increment: 1 },
+              lastRetroAttemptAt: new Date(),
+            },
+          }).catch(() => {});
+          return { status: 'needs_review', candidates: [result.transactionIds] };
+        }
+        throw err;
+      }
       if (claim.count === 0) {
         console.log(`[match] ${paymentId} already claimed by another process — skip Adesk update`);
         return result;

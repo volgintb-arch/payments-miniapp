@@ -18,7 +18,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
-import { getAuthUser, badRequest } from '@/lib/api-helpers';
+import { getAuthUser, badRequest, isUniqueViolation } from '@/lib/api-helpers';
 import { sendToGroup } from '@/lib/telegram';
 
 function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
@@ -170,42 +170,56 @@ export async function POST(
     : existingDesc ? `${rawDescription} | ${existingDesc}` : rawDescription;
 
   // 6. Создаём Payment сразу в MATCHED-состоянии (со сплитами если нужно).
-  const payment = await prisma.payment.create({
-    data: {
-      id: globalThis.crypto.randomUUID(),
-      userId: user.userId,
-      unitId,
-      adeskCategoryId,
-      adeskProjectId,
-      adeskContractorId,
-      contractorNameSnapshot,
-      projectNameSnapshot,
-      amount,
-      date: new Date(dateIso),
-      description: rawDescription,
-      cardNote,
-      paymentMethod: 'card',
-      status: 'MATCHED',
-      adeskConfirmedTransactionId: txId,
-      matchedAt: new Date(),
-      splits: hasSplits
-        ? {
-            create: splitsWithSnapshots.map((s, idx) => ({
-              id: globalThis.crypto.randomUUID(),
-              unitId: s.unitId,
-              adeskCategoryId: s.adeskCategoryId,
-              adeskProjectId: s.adeskProjectId || null,
-              adeskContractorId: s.adeskContractorId || null,
-              contractorNameSnapshot: s.contractorNameSnapshot,
-              projectNameSnapshot: s.projectNameSnapshot,
-              amount: s.amount,
-              description: s.description || null,
-              sortOrder: idx,
-            })),
-          }
-        : undefined,
-    },
-  });
+  // Гонка двойного разноса: findFirst выше — быстрый путь, но настоящая
+  // гарантия — @unique на adeskConfirmedTransactionId. Если между findFirst и
+  // create транзакцию забрал другой платёж, create упадёт с P2002 → 409.
+  let payment;
+  try {
+    payment = await prisma.payment.create({
+      data: {
+        id: globalThis.crypto.randomUUID(),
+        userId: user.userId,
+        unitId,
+        adeskCategoryId,
+        adeskProjectId,
+        adeskContractorId,
+        contractorNameSnapshot,
+        projectNameSnapshot,
+        amount,
+        date: new Date(dateIso),
+        description: rawDescription,
+        cardNote,
+        paymentMethod: 'card',
+        status: 'MATCHED',
+        adeskConfirmedTransactionId: txId,
+        matchedAt: new Date(),
+        splits: hasSplits
+          ? {
+              create: splitsWithSnapshots.map((s, idx) => ({
+                id: globalThis.crypto.randomUUID(),
+                unitId: s.unitId,
+                adeskCategoryId: s.adeskCategoryId,
+                adeskProjectId: s.adeskProjectId || null,
+                adeskContractorId: s.adeskContractorId || null,
+                contractorNameSnapshot: s.contractorNameSnapshot,
+                projectNameSnapshot: s.projectNameSnapshot,
+                amount: s.amount,
+                description: s.description || null,
+                sortOrder: idx,
+              })),
+            }
+          : undefined,
+      },
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return Response.json(
+        { error: 'Transaction already bound to another payment' },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 
   // 7. Обновляем Adesk-tx (categoryId+projectId+contractorId ИЛИ parts[]).
   const adeskUpdates: Parameters<typeof adesk.updateTransaction>[1] = {
