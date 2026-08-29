@@ -3,11 +3,29 @@
 // 1. Валидация HMAC-SHA256 подписи initData
 // 2. Генерация / верификация JWT токена
 
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+// Никакого дефолта: пустой JWT_SECRET — фатальная конфигурация, а не повод
+// подписывать токены известной из репозитория константой. Функции ниже
+// отказывают в работе (fail-closed), а не молча используют слабый секрет.
+const JWT_SECRET = process.env.JWT_SECRET || '';
 const JWT_TTL_MS = 24 * 60 * 60 * 1000; // 24 часа
+// Окно свежести initData. initData Telegram обновляет при каждом открытии
+// мини-аппа, поэтому старше суток он быть не должен: отклоняем — это отсекает
+// replay перехваченного initData (иначе он оставался бы вечным паролём).
+const INITDATA_MAX_AGE_S = Number(process.env.TG_INITDATA_MAX_AGE_S) || 86_400;
+
+// Constant-time сравнение hex-строк равной длины. false и при разной длине
+// (timingSafeEqual бросает на буферах разного размера).
+function safeHexEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+  } catch {
+    return false;
+  }
+}
 
 // ========================================
 // Telegram initData validation
@@ -27,6 +45,12 @@ export type TelegramUser = {
  * https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
  */
 export function validateInitData(initData: string): TelegramUser | null {
+  // Fail-closed: без токена бота secretKey = HMAC('WebAppData','') — публично
+  // вычислимая константа, и любой смог бы подписать initData от чужого имени.
+  if (!BOT_TOKEN) {
+    console.error('[auth] TELEGRAM_BOT_TOKEN не задан — валидация initData отключена');
+    return null;
+  }
   try {
     const params = new URLSearchParams(initData);
     const hash = params.get('hash');
@@ -44,7 +68,14 @@ export function validateInitData(initData: string): TelegramUser | null {
       .update(dataCheckString)
       .digest('hex');
 
-    if (computedHash !== hash) return null;
+    if (!safeHexEqual(computedHash, hash)) return null;
+
+    // Свежесть: перехваченный initData не должен работать вечно. Telegram
+    // обновляет auth_date при каждом открытии, поэтому старее окна — отклоняем.
+    const authDate = Number(params.get('auth_date'));
+    if (!Number.isFinite(authDate) || authDate <= 0) return null;
+    const ageS = Date.now() / 1000 - authDate;
+    if (ageS > INITDATA_MAX_AGE_S) return null;
 
     // Парсим user
     const userStr = params.get('user');
@@ -80,6 +111,11 @@ function sign(payload: string): string {
 }
 
 export function createJwt(userId: string, telegramId: number, role: string): string {
+  // Без секрета не выпускаем токен — иначе он был бы подписан пустым ключом
+  // и подделывался бы кем угодно.
+  if (!JWT_SECRET) {
+    throw new Error('[auth] JWT_SECRET не задан — выпуск токена невозможен');
+  }
   const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = base64url(
     JSON.stringify({
@@ -94,13 +130,24 @@ export function createJwt(userId: string, telegramId: number, role: string): str
 }
 
 export function verifyJwt(token: string): JwtPayload | null {
+  // Fail-closed: без секрета любой токен считаем невалидным.
+  if (!JWT_SECRET) return null;
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
 
     const [header, payload, signature] = parts;
     const expectedSig = sign(`${header}.${payload}`);
-    if (signature !== expectedSig) return null;
+    // base64url-подписи — сравниваем constant-time (через hex-представление,
+    // чтобы переиспользовать safeHexEqual и не течь по времени сравнения).
+    if (
+      !safeHexEqual(
+        Buffer.from(signature, 'base64url').toString('hex'),
+        Buffer.from(expectedSig, 'base64url').toString('hex'),
+      )
+    ) {
+      return null;
+    }
 
     const decoded = JSON.parse(
       Buffer.from(payload, 'base64url').toString(),

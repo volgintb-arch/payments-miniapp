@@ -57,6 +57,23 @@ function getTg(): TgWebApp | undefined {
   return (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
 }
 
+// JWT-payload на сервере кодируется как base64url (символы '-' и '_'), а
+// браузерный atob() понимает только стандартный base64 и бросает на них
+// InvalidCharacterError. Переводим алфавит перед декодированием, иначе
+// валидная сохранённая сессия почти всегда «не парсится» и стирается зря.
+function decodeJwtPayload(token: string): { sub: string; role: string } | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const json = JSON.parse(atob(b64));
+    if (typeof json?.sub !== 'string' || typeof json?.role !== 'string') return null;
+    return { sub: json.sub, role: json.role };
+  } catch {
+    return null;
+  }
+}
+
 async function waitForTg(timeoutMs: number): Promise<TgWebApp | undefined> {
   const started = Date.now();
   const deadline = started + timeoutMs;
@@ -167,18 +184,26 @@ export default function Home() {
           try {
             setLoadingStep('Проверяем сессию…');
             await apiFetch('/api/units');
-            if (cancelled) return;
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            setUser({
-              id: payload.sub,
-              firstName: '',
-              lastName: null,
-              role: payload.role,
-            });
-            return;
           } catch {
-            try { localStorage.removeItem('token'); } catch {}
+            // apiFetch сам делает clearToken+reload на 401 (сессия истекла /
+            // пользователь деактивирован). Сюда доходят только сетевые/5xx/
+            // таймаут — это НЕ повод стирать валидную сессию: иначе мигнувшая
+            // сеть выбрасывает пользователя, а при недоступном telegram.org
+            // (ровно сценарий, ради которого сессия проверяется до Telegram)
+            // блокирует вход. Оставляем токен, показываем «Повторить».
+            if (cancelled) return;
+            setError('Не удалось проверить сессию. Проверьте соединение и попробуйте снова.');
+            return;
           }
+          if (cancelled) return;
+          const payload = decodeJwtPayload(token);
+          if (payload) {
+            setUser({ id: payload.sub, firstName: '', lastName: null, role: payload.role });
+            return;
+          }
+          // Сервер сессию подтвердил, но токен локально не распарсился (крайне
+          // редко). Не блокируем — чистим и идём обычным путём через Telegram.
+          try { localStorage.removeItem('token'); } catch {}
         }
 
         // 2. Сессии нет — без Telegram дальше никак.
