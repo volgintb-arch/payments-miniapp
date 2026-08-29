@@ -18,7 +18,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
-import { getAuthUser, badRequest, isUniqueViolation } from '@/lib/api-helpers';
+import { getAuthUser, badRequest, isUniqueViolation, parsePositiveAmount } from '@/lib/api-helpers';
 import { sendToGroup } from '@/lib/telegram';
 
 function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
@@ -60,9 +60,14 @@ export async function POST(
 
   const bankAccountId = Number(body.bankAccountId);
   const dateIso = typeof body.dateIso === 'string' ? body.dateIso : null;
-  const amount = Number(body.amount);
-  if (!bankAccountId || !dateIso || !amount) {
-    return badRequest('bankAccountId, dateIso, amount обязательны (контекст tx)');
+  // Сумма — строго положительная (было: !amount пропускал отрицательные).
+  const amount = parsePositiveAmount(body.amount);
+  if (!bankAccountId || !dateIso || amount === null) {
+    return badRequest('bankAccountId, dateIso, положительный amount обязательны (контекст tx)');
+  }
+  // dateIso — валидная дата YYYY-MM-DD (было: мусор → Invalid Date → 500).
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso) || Number.isNaN(new Date(dateIso).getTime())) {
+    return badRequest('dateIso должна быть датой в формате YYYY-MM-DD');
   }
 
   // Нормализуем сплиты.
@@ -85,9 +90,12 @@ export async function POST(
 
   if (hasSplits) {
     for (const s of splits) {
-      if (!s.unitId || !s.adeskCategoryId || !s.adeskProjectId || !s.amount
+      // Сумма сплита — строго > 0 (было: !s.amount пропускал отрицательные,
+      // и набор [-5000, amount+5000] сходился по сумме, уходя в Adesk с parts<0).
+      if (!s.unitId || !s.adeskCategoryId || !s.adeskProjectId
+        || !(Number.isFinite(s.amount) && s.amount > 0)
         || !s.description || !String(s.description).trim()) {
-        return badRequest('Каждый сплит должен содержать юнит, статью, проект, описание и сумму');
+        return badRequest('Каждый сплит: юнит, статья, проект, описание и положительная сумма');
       }
     }
     const total = splits.reduce((sum, s) => sum + s.amount, 0);
@@ -131,6 +139,49 @@ export async function POST(
     return Response.json(
       { error: 'No access to one or more units' },
       { status: 403 },
+    );
+  }
+
+  // 2b. Сверяем tx с реальными данными Adesk. Раньше роут доверял клиенту:
+  // txId/amount/dateIso брались из тела как есть, и curl-ом можно было указать
+  // ЛЮБУЮ транзакцию (уже категоризированную, income, чужую) и перезаписать
+  // ей категорию, создав Payment с произвольной суммой. Теперь тянем tx из
+  // Adesk и проверяем: существует, расход, ещё не категоризирована, сумма
+  // совпадает с присланной (и с суммой сплитов, проверенной выше).
+  let realTx;
+  try {
+    const around = new Date(dateIso);
+    const lo = new Date(around); lo.setDate(lo.getDate() - 2);
+    const hi = new Date(around); hi.setDate(hi.getDate() + 2);
+    const fmt = (d: Date) => d.toISOString().split('T')[0];
+    const listed = await adesk.listTransactions({
+      status: 'completed',
+      type: 'outcome',
+      bankAccount: bankAccountId,
+      rangeStart: fmt(lo),
+      rangeEnd: fmt(hi),
+    });
+    realTx = (listed.transactions || []).find((t) => t.id === txId);
+  } catch (err) {
+    console.error(`[uncategorized/assign] Adesk lookup failed for tx=${txId}:`, err);
+    return Response.json({ error: 'Не удалось проверить транзакцию в Adesk' }, { status: 502 });
+  }
+  if (!realTx) {
+    return Response.json(
+      { error: 'Транзакция не найдена среди расходных операций этого счёта' },
+      { status: 404 },
+    );
+  }
+  if (realTx.category || realTx.project) {
+    return Response.json(
+      { error: 'Транзакция уже категоризирована в Adesk — разносить нельзя' },
+      { status: 409 },
+    );
+  }
+  if (Math.abs(Math.abs(Number(realTx.amount)) - amount) >= 0.01) {
+    return Response.json(
+      { error: 'Сумма не совпадает с транзакцией в Adesk' },
+      { status: 400 },
     );
   }
 

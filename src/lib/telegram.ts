@@ -3,12 +3,36 @@
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_GROUP_CHAT_ID || '';
+// Необязательный allowlist разрешённых чатов/топиков (comma-separated id, вида
+// "-100123..." или "-100123..._45"). Если задан — chatId из запроса клиента
+// принимается, только если входит сюда; иначе уведомление уходит в дефолтную
+// группу. Без него поведение прежнее (принимаем формат-валидный id).
+const ALLOWED_CHATS = new Set(
+  (process.env.TELEGRAM_ALLOWED_CHAT_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
 
 export type SentMessage = {
   chatId: string;
   messageId: number;
   threadId?: number;
 };
+
+// Санитайзер chatId из тела запроса. chatId приходит с клиента (Telegram
+// start_param) и раньше подставлялся в sendMessage как есть — сотрудник мог
+// увести уведомление о платеже в личку/другой чат, обойдя контрольную группу.
+// Возвращает безопасное значение для sendToGroup: сам chatParam, если он
+// формат-валиден и (при заданном allowlist) разрешён, иначе undefined —
+// тогда resolveTarget уходит в дефолтную группу.
+export function sanitizeChatId(chatParam: unknown): string | undefined {
+  if (typeof chatParam !== 'string' || !chatParam) return undefined;
+  // Формат: "-100123..." или "-100123..._<threadId>". Группы всегда с минусом.
+  if (!/^-\d+(_\d+)?$/.test(chatParam)) return undefined;
+  if (ALLOWED_CHATS.size > 0 && !ALLOWED_CHATS.has(chatParam)) return undefined;
+  return chatParam;
+}
 
 function resolveTarget(chatParam?: string): { chatId: string; threadId?: number } {
   let targetChatId = CHAT_ID;

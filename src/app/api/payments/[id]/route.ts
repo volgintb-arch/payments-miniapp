@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
 import { adesk } from '@/lib/adesk/client';
 import { editGroupMessage } from '@/lib/telegram';
+import { isValidExpenseCategoryForUnit } from '@/lib/category-validation';
 
 export async function PATCH(
   request: NextRequest,
@@ -70,8 +71,20 @@ export async function PATCH(
 
   if (!nextProjectId) return badRequest('Выберите проект');
   if (!nextDescription || !String(nextDescription).trim()) return badRequest('Заполните описание');
-  if (payment.paymentMethod === 'card' && (!nextCardNote || !String(nextCardNote).trim())) {
-    return badRequest('Заполните поле «Карта / заметка»');
+  // cardNote карточного платежа — ровно 4 цифры (тот же инвариант, что в POST).
+  // Раньше PATCH принимал любую строку: cardNote без цифр уводил матчер в
+  // legacy-fallback, а чужие 4 цифры расширяли поиск на все счета Adesk.
+  if (payment.paymentMethod === 'card' && !/^\d{4}$/.test(String(nextCardNote ?? '').trim())) {
+    return badRequest('«Карта» — последние 4 цифры (ровно 4 цифры)');
+  }
+  // Статья — расходная и из группы юнита платежа. Было: Number(adeskCategoryId)
+  // без проверок — NaN сериализовался в null и мог очистить категорию реальной
+  // tx в Adesk до падения записи в БД (рассинхрон).
+  if (!Number.isInteger(nextCategoryId) || nextCategoryId <= 0) {
+    return badRequest('Некорректная статья');
+  }
+  if (!(await isValidExpenseCategoryForUnit(nextCategoryId, payment.unitId))) {
+    return badRequest('Статья расхода недоступна в юните платежа');
   }
 
   const contractorNameSnapshot = await getContractorName(nextContractorId);

@@ -3,9 +3,11 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireAuth, badRequest } from '@/lib/api-helpers';
+import { requireAuth, badRequest, parsePositiveAmount } from '@/lib/api-helpers';
 import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
-import { sendToGroup } from '@/lib/telegram';
+import { sendToGroup, sanitizeChatId } from '@/lib/telegram';
+import { isValidSafeId } from '@/lib/safes';
+import { isValidIncomeCategory } from '@/lib/category-validation';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -46,11 +48,20 @@ export async function POST(request: NextRequest) {
     amount, date, description, safeId, chatId,
   } = body;
 
-  if (!amount || !date) return badRequest('amount, date are required');
+  const amountNum = parsePositiveAmount(amount);
+  if (amountNum === null) return badRequest('Сумма должна быть положительным числом');
+  if (!date) return badRequest('amount, date are required');
   if (!safeId) return badRequest('safeId is required');
   if (!adeskCategoryId) return badRequest('adeskCategoryId is required');
   if (!adeskProjectId) return badRequest('Выберите проект');
   if (!description || !String(description).trim()) return badRequest('Заполните описание');
+  // Сейф — из известного списка (было: любой bankAccount Adesk).
+  if (!isValidSafeId(Number(safeId))) return badRequest('Неизвестный сейф');
+  // Статья — доходная (type=1), существует. Иначе приход уходил в Adesk с
+  // расходной/несуществующей статьёй и ломал отчётность.
+  if (!(await isValidIncomeCategory(Number(adeskCategoryId)))) {
+    return badRequest('Статья дохода недоступна');
+  }
 
   // Анти-дубль: раньше приходы вообще не защищались, и повторный тап / ретрай
   // после таймаута создавал два прихода в Adesk. Best-effort окно 5 минут по
@@ -121,7 +132,7 @@ export async function POST(request: NextRequest) {
     tag,
   ].filter(Boolean).join(' / ');
 
-  sendToGroup(tgText, chatId || undefined).catch(() => {});
+  sendToGroup(tgText, sanitizeChatId(chatId)).catch(() => {});
 
   // Идемпотентное создание: при таймауте+ретрае найдём уже созданную
   // транзакцию по счёту/дате/сумме/описанию, а не задвоим приход.

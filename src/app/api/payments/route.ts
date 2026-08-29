@@ -9,10 +9,12 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireAuth, badRequest, isUniqueViolation } from '@/lib/api-helpers';
+import { requireAuth, badRequest, isUniqueViolation, parsePositiveAmount } from '@/lib/api-helpers';
 import { processRetroMatch } from '@/lib/retro-match';
-import { sendToGroup } from '@/lib/telegram';
+import { sendToGroup, sanitizeChatId } from '@/lib/telegram';
 import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
+import { isValidSafeId } from '@/lib/safes';
+import { isValidExpenseCategoryForUnit } from '@/lib/category-validation';
 
 function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
   if (u.telegramUsername) return `@${u.telegramUsername}`;
@@ -97,7 +99,13 @@ export async function POST(request: NextRequest) {
   if (isCash && !safeId) {
     return badRequest('safeId is required for cash payments');
   }
-  if (!amount || !date) {
+  // Сумма — строго положительное конечное число (было: !amount пропускал
+  // отрицательные и NaN, отрицательный расход искажал остатки в Adesk).
+  const amountNum = parsePositiveAmount(amount);
+  if (amountNum === null) {
+    return badRequest('Сумма должна быть положительным числом');
+  }
+  if (!date) {
     return badRequest('amount, date are required');
   }
   if (!description || !String(description).trim()) {
@@ -105,6 +113,11 @@ export async function POST(request: NextRequest) {
   }
   if (!isCash && !/^\d{4}$/.test(String(cardNote ?? '').trim())) {
     return badRequest('cardNote должен содержать ровно 4 цифры (последние цифры карты)');
+  }
+  // Наличные пишутся на счёт Adesk — сверяем safeId с известным списком, иначе
+  // сотрудник мог провести операцию на любом расчётном счёте компании.
+  if (isCash && !isValidSafeId(Number(safeId))) {
+    return badRequest('Неизвестный сейф');
   }
 
   // Нормализуем сплиты
@@ -123,13 +136,17 @@ export async function POST(request: NextRequest) {
 
   if (hasSplits) {
     for (const s of splits) {
-      if (!s.unitId || !s.adeskCategoryId || !s.adeskProjectId || !s.amount || !s.description || !String(s.description).trim()) {
-        return badRequest('Каждый сплит должен содержать юнит, статью, проект, описание и сумму');
+      // Сумма сплита — строго > 0 (было: !s.amount пропускал отрицательные,
+      // а набор [5000, -3000] сходился к 2000 и уходил в Adesk с amount<0).
+      if (!s.unitId || !s.adeskCategoryId || !s.adeskProjectId
+        || !(Number.isFinite(s.amount) && s.amount > 0)
+        || !s.description || !String(s.description).trim()) {
+        return badRequest('Каждый сплит: юнит, статья, проект, описание и положительная сумма');
       }
     }
     const total = splits.reduce((sum, s) => sum + s.amount, 0);
-    if (Math.abs(total - Number(amount)) >= 0.01) {
-      return badRequest(`Сумма сплитов (${total}) не равна сумме платежа (${amount})`);
+    if (Math.abs(total - amountNum) >= 0.01) {
+      return badRequest(`Сумма сплитов (${total}) не равна сумме платежа (${amountNum})`);
     }
   } else {
     if (!unitId || !adeskCategoryId || !adeskProjectId) {
@@ -150,6 +167,17 @@ export async function POST(request: NextRequest) {
   });
   if (accessibleUnits.length !== unitIds.length) {
     return Response.json({ error: 'No access to one or more units' }, { status: 403 });
+  }
+
+  // Сверяем статью с юнитом и типом: расходная (type=2), из группы юнита.
+  // Иначе можно было разнести расход по чужой/доходной/несуществующей статье.
+  const catPairs = hasSplits
+    ? splits.map((s) => ({ categoryId: s.adeskCategoryId, unitId: s.unitId }))
+    : [{ categoryId: Number(adeskCategoryId), unitId: paymentUnitId }];
+  for (const p of catPairs) {
+    if (!(await isValidExpenseCategoryForUnit(p.categoryId, p.unitId))) {
+      return badRequest('Статья расхода недоступна в выбранном юните');
+    }
   }
 
   // Guard от быстрого дубля: если тот же пользователь только что подал платёж
@@ -294,7 +322,7 @@ export async function POST(request: NextRequest) {
     tgText = parts.join(' / ');
   }
 
-  sendToGroup(tgText, chatId || undefined).then((sent) => {
+  sendToGroup(tgText, sanitizeChatId(chatId)).then((sent) => {
     if (sent) {
       prisma.payment.update({
         where: { id: payment.id },

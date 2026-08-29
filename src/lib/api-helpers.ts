@@ -149,6 +149,17 @@ export function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+// Потолок суммы — против опечаток («100000» вместо «1000.00») и переполнений.
+export const MAX_AMOUNT = 100_000_000;
+
+// Парсит сумму как строго положительное конечное число в пределах потолка.
+// null — невалидно (отрицательное, 0, NaN, строка, слишком большое).
+export function parsePositiveAmount(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_AMOUNT) return null;
+  return n;
+}
+
 export function badRequest(message: string) {
   return Response.json({ error: message }, { status: 400 });
 }
