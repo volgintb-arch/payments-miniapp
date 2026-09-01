@@ -1,0 +1,1056 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0;background:#F8FAFC}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Водопад Корбу</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --violet:#7B61FF; --violet-deep:#5A3FF0; --violet-ink:#4930C9;
+  --violet-soft:#EFECFF; --violet-border:#DCD5FF;
+  --green:#1EA65A; --green-deep:#15803D; --green-soft:#E7F8EF; --green-border:#C4EDD5;
+  --amber:#D97706; --amber-ink:#8A5200; --amber-soft:#FDF3E3; --amber-border:#F3DDB4;
+  --blue:#229ED9;
+  --ink:#111827; --body-ink:#374151; --muted:#6B7280; --faint:#98A1B3;
+  --bg:#F5F7FB; --card:#FFFFFF; --line:#E8ECF3;
+  --shadow-card:0 1px 2px rgba(17,24,39,.04),0 10px 26px -14px rgba(17,24,39,.14);
+  --r-lg:22px; --r-md:16px;
+  --disp:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:#E9ECF4;font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+button{font-family:var(--font)}
+:focus-visible{outline:2px solid var(--violet);outline-offset:2px;border-radius:10px}
+.app{position:relative;max-width:430px;margin:0 auto;background:var(--bg);min-height:100dvh;overflow-x:clip}
+@media(min-width:520px){
+  body{padding:30px 0;background:radial-gradient(1100px 700px at 50% -8%,#DDD6FF 0%,#E9ECF4 46%,#E1E5EF 100%)}
+  .app{border-radius:42px;box-shadow:0 44px 90px -34px rgba(38,25,110,.38),0 0 0 1px rgba(17,24,39,.06);overflow:clip}
+}
+/* ── reading progress + sticky topbar ─────────────────── */
+.progress{position:fixed;top:0;left:50%;transform:translateX(-50%);width:min(430px,100%);height:3px;z-index:70;pointer-events:none}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--violet),#A18DFF);transform-origin:0 50%;transform:scaleX(0)}
+.topbar{position:fixed;top:0;left:50%;transform:translateX(-50%);width:min(430px,100%);z-index:60;pointer-events:none}
+.topbar .tb{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(248,250,252,.88);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);transform:translateY(-110%);transition:transform .4s var(--ease);pointer-events:auto}
+.topbar.on .tb{transform:translateY(0)}
+.tb b{font:700 15px/1.2 var(--disp);letter-spacing:-.01em}
+.tb .tbr{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:600 12.5px/1 var(--font);color:var(--muted)}
+.tb .tbr svg{color:#F5A623}
+.tb .tbtn{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:var(--ink);cursor:pointer;transition:transform .15s}
+.tb .tbtn:active{transform:scale(.9)}
+/* ── hero ─────────────────────────────────────────────── */
+.hero{position:relative;height:560px;color:#fff;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;background:#7FA8CC}
+.hero-art{position:absolute;inset:-10% 0 0 0;width:100%;height:112%;will-change:transform}
+.hero-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,16,29,.44) 0%,rgba(9,16,29,0) 30%,rgba(9,16,29,0) 46%,rgba(7,12,24,.66) 100%)}
+.hero-top{position:absolute;top:0;left:0;right:0;display:flex;gap:10px;padding:16px;z-index:3}
+.hero-top .sp{flex:1}
+.icbtn{width:40px;height:40px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(15,23,42,.36);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#fff;cursor:pointer;transition:transform .15s,background .25s,color .25s}
+.icbtn:active{transform:scale(.9)}
+.icbtn.liked{color:#FF4D6D;background:rgba(255,255,255,.94)}
+.icbtn.liked svg{fill:currentColor;animation:pop .4s var(--ease)}
+@keyframes pop{0%{transform:scale(.6)}55%{transform:scale(1.25)}100%{transform:scale(1)}}
+.hero-body{position:relative;z-index:2;padding:0 20px 22px;display:flex;flex-direction:column;align-items:flex-start;gap:10px;will-change:transform,opacity}
+.hero-body>*{opacity:0;transform:translateY(18px);animation:rise .75s var(--ease) forwards}
+.hero-body>*:nth-child(2){animation-delay:.09s}
+.hero-body>*:nth-child(3){animation-delay:.16s}
+.hero-body>*:nth-child(4){animation-delay:.23s}
+.hero-body>*:nth-child(5){animation-delay:.32s}
+@keyframes rise{to{opacity:1;transform:none}}
+.rating{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.95);color:var(--ink);font:700 13px/1 var(--font);padding:8px 11px;border-radius:999px;font-variant-numeric:tabular-nums}
+.rating svg{color:#F5A623}
+.hero h1{margin:0;font:800 36px/1.08 var(--disp);letter-spacing:-.025em;text-wrap:balance;text-shadow:0 2px 20px rgba(7,12,24,.4)}
+.hero-sub{margin:0;font:500 15px/1.35 var(--font);color:rgba(255,255,255,.88)}
+.hero-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+.hchip{display:inline-flex;align-items:center;gap:6px;font:600 12.5px/1 var(--font);padding:8px 12px;border-radius:999px;background:rgba(15,23,42,.38);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.hchip.ok{background:rgba(30,166,90,.55)}
+.cta{margin-top:8px;width:100%;display:flex;align-items:center;gap:12px;border:0;border-radius:18px;padding:11px 14px;background:linear-gradient(135deg,#8B72FF,#6A4DF6 70%);color:#fff;font:700 15px/1.2 var(--disp);cursor:pointer;box-shadow:0 16px 34px -12px rgba(90,63,240,.7);transition:transform .15s,filter .2s}
+.cta:active{transform:scale(.975)}
+.cta:hover{filter:brightness(1.05)}
+.cta .pl{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center;flex:none}
+.cta .tm{margin-left:auto;font:600 13px/1 var(--font);opacity:.85;font-variant-numeric:tabular-nums}
+/* hero art motion */
+.fall-move{animation:fall 2.3s linear infinite}
+@keyframes fall{to{transform:translateY(260px)}}
+.foam{transform-box:fill-box;transform-origin:center;animation:foam 3.8s ease-in-out infinite}
+.foam.f2{animation-delay:-1.3s}.foam.f3{animation-delay:-2.5s}
+@keyframes foam{0%,100%{transform:scaleX(1)}50%{transform:scaleX(1.07)}}
+.mist{animation:mist 7s ease-in-out infinite alternate}
+@keyframes mist{from{transform:translateY(0);opacity:1}to{transform:translateY(-16px);opacity:.35}}
+.bird{animation:bird 13s linear infinite}
+.bird.b2{animation-duration:17s;animation-delay:-6s}
+@keyframes bird{from{transform:translateX(-60px)}to{transform:translateX(480px)}}
+/* ── layout / sections ────────────────────────────────── */
+main{display:flex;flex-direction:column;gap:36px;padding:26px 0 34px}
+.sec{padding:0 20px;display:flex;flex-direction:column;gap:14px}
+.sec-h{display:flex;align-items:baseline;gap:10px}
+.sec-h h2{margin:0;font:700 20px/1.2 var(--disp);letter-spacing:-.015em}
+.sec-h .all{margin-left:auto;border:0;background:none;color:var(--violet);font:600 13px/1 var(--font);cursor:pointer;padding:4px 0;transition:opacity .2s}
+.sec-h .all:active{opacity:.6}
+.sec>p{margin:0;font:400 15px/1.62 var(--font);color:var(--body-ink);max-width:62ch}
+/* scroll reveal */
+.rv{opacity:0;transform:translateY(28px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.rv.in{opacity:1;transform:none}
+.stag>*{opacity:0;transform:translateY(20px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.stag.in>*{opacity:1;transform:none}
+.stag.in>*:nth-child(2){transition-delay:.07s}
+.stag.in>*:nth-child(3){transition-delay:.14s}
+.stag.in>*:nth-child(4){transition-delay:.21s}
+.stag.in>*:nth-child(5){transition-delay:.28s}
+.stag.in>*:nth-child(6){transition-delay:.35s}
+.stag.in>*:nth-child(7){transition-delay:.42s}
+/* rails (horizontal scroll) */
+.rail{display:flex;gap:12px;overflow-x:auto;margin:0 -20px;padding:4px 20px 10px;scroll-snap-type:x mandatory;scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.rail>*{scroll-snap-align:start;flex:none}
+.fit{width:100%;height:100%;display:block}
+/* cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:16px}
+.ic{width:18px;height:18px;flex:none}
+/* video */
+.vcard{width:152px;display:flex;flex-direction:column;gap:8px;cursor:pointer;border:0;background:none;padding:0;text-align:left}
+.vthumb{position:relative;height:214px;border-radius:18px;overflow:hidden;box-shadow:var(--shadow-card)}
+.vplay{position:absolute;inset:0;margin:auto;width:46px;height:46px;border-radius:50%;background:rgba(15,23,42,.46);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:grid;place-items:center;color:#fff;transition:transform .25s var(--ease)}
+.vcard:hover .vplay,.vcard:active .vplay{transform:scale(1.12)}
+.vdur{position:absolute;right:8px;bottom:8px;background:rgba(15,23,42,.62);color:#fff;font:600 11px/1 var(--font);padding:4px 7px;border-radius:8px;font-variant-numeric:tabular-nums}
+.vcap{font:500 13px/1.35 var(--font);color:var(--body-ink)}
+/* photos */
+.ptile{position:relative;width:152px;height:114px;border-radius:16px;overflow:hidden;cursor:pointer;box-shadow:var(--shadow-card);border:0;padding:0;background:#DFE9EE;transition:transform .2s var(--ease)}
+.ptile:active{transform:scale(.96)}
+.ptile .pmore{position:absolute;inset:0;display:grid;place-items:center;background:rgba(15,23,42,.5);color:#fff;font:700 16px/1 var(--disp)}
+/* why go / skip */
+.why{border-radius:var(--r-lg);padding:16px;display:flex;flex-direction:column;gap:11px}
+.why.go{background:var(--green-soft);border:1px solid var(--green-border)}
+.why.skip{background:var(--amber-soft);border:1px solid var(--amber-border)}
+.why b{font:700 14.5px/1.3 var(--disp)}
+.why.go b{color:var(--green-deep)}
+.why.skip b{color:var(--amber-ink)}
+.why ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+.why li{display:flex;gap:9px;align-items:flex-start;font:400 14px/1.45 var(--font);color:var(--body-ink)}
+.why li svg{width:16px;height:16px;flex:none;margin-top:2px}
+.why.go li svg{color:var(--green)}
+.why.skip li svg{color:var(--amber)}
+/* audio guide */
+.audio{display:flex;flex-direction:column;gap:13px}
+.audio-top{display:flex;gap:12px;align-items:center}
+.acover{width:56px;height:56px;border-radius:14px;overflow:hidden;flex:none;box-shadow:inset 0 0 0 1px rgba(17,24,39,.06)}
+.ainfo{flex:1;min-width:0}
+.ainfo b{font:700 14.5px/1.35 var(--disp);display:block}
+.ainfo span{font:500 12.5px/1.6 var(--font);color:var(--muted)}
+.eq{display:none;gap:3px;align-items:flex-end;height:14px;margin-left:6px;vertical-align:-2px}
+.playing .eq{display:inline-flex}
+.eq i{width:3px;height:100%;border-radius:2px;background:var(--violet);transform-origin:bottom;animation:eq 1s ease-in-out infinite}
+.eq i:nth-child(2){animation-delay:.18s}.eq i:nth-child(3){animation-delay:.36s}.eq i:nth-child(4){animation-delay:.54s}
+@keyframes eq{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+.abtn{width:46px;height:46px;border-radius:50%;border:0;background:linear-gradient(135deg,#8B72FF,#6A4DF6);color:#fff;display:grid;place-items:center;cursor:pointer;flex:none;box-shadow:0 12px 24px -10px rgba(90,63,240,.65);transition:transform .15s}
+.abtn:active{transform:scale(.9)}
+.abtn .ip{display:block}.abtn .iq{display:none}
+.playing .abtn .ip{display:none}.playing .abtn .iq{display:block}
+.atrack{--p:0%;position:relative;height:18px;cursor:pointer;touch-action:none}
+.atrack::before{content:"";position:absolute;left:0;right:0;top:50%;height:5px;transform:translateY(-50%);border-radius:99px;background:var(--violet-soft)}
+.atrack i{position:absolute;left:0;top:50%;height:5px;transform:translateY(-50%);width:var(--p);background:linear-gradient(90deg,#A18DFF,var(--violet));border-radius:99px}
+.atrack u{position:absolute;top:50%;left:var(--p);width:14px;height:14px;border-radius:50%;background:#fff;border:3.5px solid var(--violet);transform:translate(-50%,-50%);box-shadow:0 2px 8px rgba(90,63,240,.4)}
+.atimes{display:flex;justify-content:space-between;font:500 12px/1 var(--font);color:var(--muted);font-variant-numeric:tabular-nums}
+/* read more */
+.more{display:grid;grid-template-rows:0fr;transition:grid-template-rows .55s var(--ease)}
+.more.open{grid-template-rows:1fr}
+.more>div{overflow:hidden}
+.more p{margin:12px 0 0;font:400 15px/1.62 var(--font);color:var(--body-ink)}
+.morebtn{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:var(--violet);font:600 14px/1 var(--font);cursor:pointer;padding:2px 0;align-self:flex-start}
+.morebtn svg{transition:transform .4s var(--ease)}
+.morebtn.open svg{transform:rotate(180deg)}
+/* facts row */
+.facts{display:flex;gap:8px;flex-wrap:wrap}
+.fact{display:inline-flex;gap:7px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 12px;font:600 13px/1 var(--font);color:var(--body-ink);box-shadow:var(--shadow-card)}
+.fact svg{color:var(--violet)}
+/* boat / transport */
+.boat{display:flex;flex-direction:column;gap:12px}
+.boat-top{display:flex;gap:12px}
+.bthumb{width:74px;height:74px;border-radius:16px;overflow:hidden;flex:none;box-shadow:inset 0 0 0 1px rgba(17,24,39,.06)}
+.binfo{flex:1;min-width:0}
+.binfo b{font:700 15px/1.3 var(--disp);display:block}
+.binfo .route{display:block;font:500 12.5px/1.7 var(--font);color:var(--muted)}
+.bprice{display:block;margin-top:2px;font:700 15px/1.2 var(--disp);color:var(--violet-ink);font-variant-numeric:tabular-nums}
+.bmeta{display:flex;gap:7px;flex-wrap:wrap}
+.tag{display:inline-flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:6px 9px;font:600 12px/1 var(--font);color:var(--muted)}
+.tag svg{width:14px;height:14px}
+.contact-row{display:flex;gap:8px}
+.cbtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:13px;padding:11px 8px;font:600 13px/1 var(--font);cursor:pointer;transition:transform .15s,filter .2s}
+.cbtn:active{transform:scale(.96)}
+.cbtn.wa{background:#E5F8EC;color:#12813F}
+.cbtn.tg{background:#E3F3FB;color:#1B7FB0}
+.cbtn.ph{background:linear-gradient(135deg,#8B72FF,#6A4DF6);color:#fff}
+.cbtn svg{width:16px;height:16px}
+/* months (seasonality) */
+.months{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.mon{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 2px 9px;box-shadow:var(--shadow-card)}
+.mon b{font:700 13px/1 var(--disp)}
+.mon.best{border-color:var(--green-border);background:linear-gradient(180deg,#FFF, #F1FBF5)}
+.mon small{font:500 10px/1 var(--font);color:var(--muted)}
+.dot{width:9px;height:9px;border-radius:50%}
+.d-best{background:var(--green)}
+.d-good{background:#fff;border:2.5px solid var(--green);width:8px;height:8px}
+.d-ok{background:var(--amber)}
+.d-no{background:#A6B0C3}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font:500 12px/1.3 var(--font);color:var(--muted);align-items:center}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+/* difficulty */
+.diff{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.dcell{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:13px 6px 11px;box-shadow:var(--shadow-card);text-align:center}
+.dcell svg{color:var(--violet)}
+.dcell b{font:700 12.5px/1.2 var(--disp)}
+.dcell small{font:500 11px/1.3 var(--font);color:var(--muted)}
+.dcell.easy svg{color:var(--green)}
+/* bring chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;gap:7px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:9px 13px;font:600 13px/1 var(--font);color:var(--body-ink);box-shadow:var(--shadow-card)}
+.chip svg{width:15px;height:15px;color:var(--violet)}
+/* warning */
+.warn{background:var(--amber-soft);border:1px solid var(--amber-border);border-radius:var(--r-lg);padding:15px 16px;display:flex;gap:12px;align-items:flex-start}
+.warn svg{color:var(--amber);flex:none;margin-top:1px}
+.warn div b{display:block;font:700 14px/1.4 var(--disp);color:var(--amber-ink)}
+.warn div p{margin:3px 0 0;font:400 13.5px/1.55 var(--font);color:#6B4A0E}
+/* food */
+.food{display:flex;gap:13px;align-items:center;cursor:pointer;transition:transform .2s var(--ease)}
+.food:active{transform:scale(.98)}
+.fthumb{width:86px;height:86px;border-radius:18px;overflow:hidden;flex:none;box-shadow:inset 0 0 0 1px rgba(17,24,39,.06)}
+.food .fi{flex:1;min-width:0}
+.food .fi b{font:700 15px/1.3 var(--disp);display:block}
+.food .fi p{margin:4px 0 6px;font:400 12.5px/1.5 var(--font);color:var(--muted)}
+.frate{display:inline-flex;align-items:center;gap:5px;font:600 12.5px/1 var(--font);color:var(--body-ink);font-variant-numeric:tabular-nums}
+.frate svg{color:#F5A623;width:14px;height:14px}
+.food>svg.chev{color:var(--faint);flex:none}
+/* nearby */
+.ncard{width:142px;display:flex;flex-direction:column;gap:8px;border:0;background:none;padding:0;cursor:pointer;text-align:left}
+.nthumb{height:98px;border-radius:16px;overflow:hidden;box-shadow:var(--shadow-card)}
+.ncard b{font:700 13.5px/1.25 var(--disp)}
+.ncard small{display:inline-flex;gap:5px;align-items:center;font:500 12px/1 var(--font);color:var(--muted)}
+.ncard small svg{width:13px;height:13px;color:var(--violet)}
+/* routes */
+.rcard{width:296px;padding:0;overflow:hidden;display:flex;flex-direction:column}
+.rmap{position:relative;height:118px}
+.rmap .radd{position:absolute;right:10px;bottom:10px;width:38px;height:38px;border-radius:50%;border:0;background:linear-gradient(135deg,#8B72FF,#6A4DF6);color:#fff;display:grid;place-items:center;cursor:pointer;box-shadow:0 10px 20px -8px rgba(90,63,240,.7);transition:transform .18s var(--ease)}
+.rmap .radd:active{transform:scale(.88) rotate(90deg)}
+.rbody{padding:13px 15px 15px;display:flex;flex-direction:column;gap:9px}
+.rbody b{font:700 14.5px/1.3 var(--disp)}
+/* booking */
+.book{display:flex;flex-direction:column;gap:13px}
+.book-top{display:flex;gap:12px;align-items:center}
+.avatar{width:52px;height:52px;border-radius:50%;overflow:hidden;flex:none;box-shadow:inset 0 0 0 1px rgba(17,24,39,.08)}
+.avatar.sm{width:40px;height:40px}
+.book-top .bi{flex:1;min-width:0}
+.book-top .bi b{font:700 15px/1.3 var(--disp);display:block}
+.book-top .bi span{display:block;font:500 12.5px/1.6 var(--font);color:var(--muted)}
+.book-top .bi .tel{display:block;font:600 13px/1.6 var(--font);color:var(--body-ink);font-variant-numeric:tabular-nums}
+/* reviews */
+.review{display:flex;flex-direction:column;gap:11px}
+.rhead{display:flex;gap:10px;align-items:center}
+.rhead .ri{flex:1;min-width:0}
+.rhead .ri b{font:700 14px/1.3 var(--disp);display:block}
+.rhead .ri span{font:500 12px/1.5 var(--font);color:var(--muted)}
+.stars{display:inline-flex;gap:2px;color:#F5A623}
+.stars svg{width:13px;height:13px}
+.review p{margin:0;font:400 14px/1.6 var(--font);color:var(--body-ink)}
+.rphotos{display:flex;gap:8px}
+.rphotos span{width:64px;height:48px;border-radius:10px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(17,24,39,.06)}
+/* update info */
+.update{background:linear-gradient(160deg,#F2EFFF,#E9E4FF);border:1px solid var(--violet-border);border-radius:var(--r-lg);padding:18px 16px;display:flex;flex-direction:column;gap:12px}
+.update h3{margin:0;font:700 16px/1.3 var(--disp)}
+.update>p{margin:0;font:400 13.5px/1.55 var(--font);color:#4B4570}
+.uchips{display:flex;flex-wrap:wrap;gap:8px}
+.uchip{border:1px solid var(--violet-border);background:#fff;border-radius:999px;padding:9px 13px;font:600 12.5px/1 var(--font);color:var(--violet-ink);cursor:pointer;transition:background .2s,color .2s,transform .15s}
+.uchip:active{transform:scale(.95)}
+.uchip.sel{background:var(--violet);border-color:var(--violet);color:#fff}
+.ubtn{border:0;border-radius:14px;padding:13px;background:linear-gradient(135deg,#8B72FF,#6A4DF6);color:#fff;font:700 14px/1 var(--disp);cursor:pointer;box-shadow:0 12px 26px -10px rgba(90,63,240,.6);transition:transform .15s}
+.ubtn:active{transform:scale(.97)}
+/* footer */
+.foot{padding:6px 20px 30px;text-align:center;font:500 12.5px/1.7 var(--font);color:var(--faint)}
+.foot b{color:var(--violet);font-family:var(--disp)}
+/* lightbox */
+.lb{position:fixed;inset:0;z-index:110;background:rgba(8,10,18,.93);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .3s}
+.lb.open{opacity:1;pointer-events:auto}
+.lb-top{display:flex;align-items:center;padding:16px 18px;color:#fff}
+.lb-top b{font:600 14px/1 var(--font);font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.lb-top .icbtn{margin-left:auto;background:rgba(255,255,255,.14)}
+.lb-rail{flex:1;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;align-items:center}
+.lb-rail::-webkit-scrollbar{display:none}
+.lb-slide{flex:0 0 100%;scroll-snap-align:center;display:grid;place-items:center;padding:0 18px}
+.lb-slide svg{width:100%;max-width:520px;border-radius:22px;box-shadow:0 30px 80px -20px rgba(0,0,0,.7)}
+.lb-cap{padding:18px;text-align:center;color:rgba(255,255,255,.75);font:500 13px/1.4 var(--font)}
+/* toast */
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(24px);background:#151B29;color:#fff;padding:12px 17px;border-radius:14px;font:500 13.5px/1.35 var(--font);opacity:0;pointer-events:none;transition:opacity .35s var(--ease),transform .35s var(--ease);z-index:130;max-width:min(380px,88vw);text-align:center;box-shadow:0 14px 34px -8px rgba(0,0,0,.45)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}
+  html{scroll-behavior:auto}
+  .rv,.stag>*,.hero-body>*{opacity:1!important;transform:none!important}
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<defs>
+  <linearGradient id="gSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FB4D4"/><stop offset=".55" stop-color="#C3DBEA"/><stop offset="1" stop-color="#E4EFF4"/></linearGradient>
+  <linearGradient id="gSkyWarm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F7B267"/><stop offset=".6" stop-color="#FBD9A6"/><stop offset="1" stop-color="#FDEDD3"/></linearGradient>
+  <linearGradient id="gWater" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3E96AC"/><stop offset="1" stop-color="#1E5E76"/></linearGradient>
+  <linearGradient id="gWaterWarm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C98E7E"/><stop offset="1" stop-color="#5E4670"/></linearGradient>
+  <linearGradient id="gFall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F8FDFF"/><stop offset="1" stop-color="#BFE2EF"/></linearGradient>
+  <linearGradient id="gPool" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#57A7B8"/><stop offset="1" stop-color="#215F74"/></linearGradient>
+  <linearGradient id="gCheb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2BC57"/><stop offset="1" stop-color="#D9902D"/></linearGradient>
+  <linearGradient id="gAv1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8B72FF"/><stop offset="1" stop-color="#5A3FF0"/></linearGradient>
+  <linearGradient id="gAv2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0E9488"/></linearGradient>
+  <linearGradient id="gAv3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FBAF5D"/><stop offset="1" stop-color="#E6742E"/></linearGradient>
+
+  <symbol id="iBack" viewBox="0 0 24 24"><path d="M15 18 9 12l6-6"/></symbol>
+  <symbol id="iHeart" viewBox="0 0 24 24"><path d="M12 20.3C7.2 16 4 13.2 4 9.9 4 7.4 5.9 5.5 8.3 5.5c1.5 0 2.9.8 3.7 2.1.8-1.3 2.2-2.1 3.7-2.1 2.4 0 4.3 1.9 4.3 4.4 0 3.3-3.2 6.1-8 10.4Z"/></symbol>
+  <symbol id="iShare" viewBox="0 0 24 24"><path d="M12 14.5V4M8.5 7.5 12 4l3.5 3.5"/><path d="M6 11.5v8h12v-8"/></symbol>
+  <symbol id="iStar" viewBox="0 0 24 24"><path d="M12 3.2l2.6 5.5 6 .7-4.4 4.1 1.2 5.9L12 16.5 6.6 19.4l1.2-5.9L3.4 9.4l6-.7Z"/></symbol>
+  <symbol id="iPlay" viewBox="0 0 24 24"><path d="M8.5 5.8v12.4L19 12Z"/></symbol>
+  <symbol id="iPause" viewBox="0 0 24 24"><path d="M7 5h3.4v14H7Z"/><path d="M13.6 5H17v14h-3.4Z"/></symbol>
+  <symbol id="iClock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="iWave" viewBox="0 0 24 24"><path d="M2.5 9c1.6-2.4 4.1-2.4 5.7 0s4.1 2.4 5.7 0 4.1-2.4 5.7 0"/><path d="M2.5 15.5c1.6-2.4 4.1-2.4 5.7 0s4.1 2.4 5.7 0 4.1-2.4 5.7 0"/></symbol>
+  <symbol id="iBoat" viewBox="0 0 24 24"><path d="M4 16.5h16L17.5 20h-11Z"/><path d="M12 16V5.5"/><path d="M12 5.5l5.5 8h-11Z"/></symbol>
+  <symbol id="iCheck" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="iX" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="iChev" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+  <symbol id="iChevR" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+  <symbol id="iPhone" viewBox="0 0 24 24"><path d="M7.6 3.5c.6 0 1.1.4 1.3 1l.9 2.6c.2.6 0 1.2-.5 1.6l-1.3 1a12.6 12.6 0 0 0 5.3 5.3l1-1.3c.4-.5 1-.7 1.6-.5l2.6.9c.6.2 1 .7 1 1.3v2.3c0 .9-.7 1.6-1.6 1.5C10.3 20.6 3.4 13.7 2.8 5.1c-.1-.9.6-1.6 1.5-1.6Z"/></symbol>
+  <symbol id="iSend" viewBox="0 0 24 24"><path d="M21 3.5 3.6 10.4l5.6 2 .1 5.3 3-3.5 4.6 3.3Z"/><path d="M9.2 12.4 21 3.5"/></symbol>
+  <symbol id="iWa" viewBox="0 0 24 24"><path d="M12 4a8 8 0 0 0-6.9 12l-1 3.9 4-1A8 8 0 1 0 12 4Z"/><path d="M9.3 9.7c.6 2.4 2.6 4.4 5 5"/></symbol>
+  <symbol id="iPin" viewBox="0 0 24 24"><path d="M12 21.5S5 15.8 5 10.3a7 7 0 0 1 14 0c0 5.5-7 11.2-7 11.2Z"/><circle cx="12" cy="10.3" r="2.6"/></symbol>
+  <symbol id="iPlus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol>
+  <symbol id="iAlert" viewBox="0 0 24 24"><path d="M12 3.5 2.5 20h19Z"/><path d="M12 9.8v4.4M12 17.1v.3"/></symbol>
+  <symbol id="iUsers" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c.6-3.1 2.8-5 5.5-5s4.9 1.9 5.5 5"/><circle cx="16.8" cy="9.6" r="2.5"/><path d="M17.4 14.7c1.9.4 3.1 1.9 3.5 4.3"/></symbol>
+  <symbol id="iWalk" viewBox="0 0 24 24"><circle cx="13.2" cy="4.6" r="1.9"/><path d="M13 8.2 10.6 13l-2.4 6.8M13 8.2l1.9 3.9 3 1.6M10.6 13l3.4 2.7.9 4.5"/><path d="M13 8.2 9 10.5l-.8 3.3"/></symbol>
+  <symbol id="iElev" viewBox="0 0 24 24"><path d="M3.5 18.5 10 11l4 4 6.5-8"/><path d="M15.8 7h4.7v4.7"/></symbol>
+  <symbol id="iShoe" viewBox="0 0 24 24"><path d="M4 15.5h9l2.7-2.8c2.3.9 4.3 2 4.3 3.3v1.5H4Z"/><path d="M4 15.5v-3.3l3-1.2 2 2"/></symbol>
+  <symbol id="iRain" viewBox="0 0 24 24"><path d="M12 3.5a8 8 0 0 1 8 8H4a8 8 0 0 1 8-8Z"/><path d="M12 11.5V18a1.9 1.9 0 0 0 3.8 0"/><path d="M12 3.5V2.3"/></symbol>
+  <symbol id="iDrop" viewBox="0 0 24 24"><path d="M12 3.5S6.5 10 6.5 14a5.5 5.5 0 0 0 11 0C17.5 10 12 3.5 12 3.5Z"/></symbol>
+  <symbol id="iCash" viewBox="0 0 24 24"><rect x="2.8" y="6.5" width="18.4" height="11" rx="2.2"/><circle cx="12" cy="12" r="2.6"/><path d="M6.4 9.7v.1M17.6 14.2v.1"/></symbol>
+  <symbol id="iSpray" viewBox="0 0 24 24"><rect x="8.5" y="9" width="7" height="11" rx="2"/><path d="M10.5 9V6.5h3V9"/><path d="M17.5 5.5h.1M19.6 7.6h.1M19.6 3.7h.1M17.5 9.6h.1"/></symbol>
+  <symbol id="iCam" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="12" cy="13.2" r="3.6"/><path d="M8.5 7 10 4.5h4L15.5 7"/></symbol>
+  <symbol id="iRoute" viewBox="0 0 24 24"><circle cx="5.5" cy="18" r="2"/><circle cx="18.5" cy="6" r="2"/><path d="M7.5 18h7a4 4 0 0 0 0-8h-5"/></symbol>
+  <symbol id="iChild" viewBox="0 0 24 24"><circle cx="12" cy="5.8" r="2.3"/><path d="M12 8.5v6M12 14.5 9.2 20M12 14.5l2.8 5.5M7.8 11.2 12 9.8l4.2 1.4"/></symbol>
+
+  <symbol id="ph1" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="url(#gSky)"/>
+    <path d="M0 140 80 70l80 60 80-70 80 68 80-44V300H0Z" fill="#6E93AE"/>
+    <path d="M0 300V150c60-2 110 18 140 50 28 30 38 52 44 100Z" fill="#33544D"/>
+    <path d="M400 300V145c-60 0-108 23-138 57-26 30-38 52-44 98Z" fill="#2C4A45"/>
+    <rect x="176" y="86" width="52" height="176" rx="14" fill="url(#gFall)"/>
+    <path d="M0 300v-38c80-12 150-18 200-18s120 6 200 18v38Z" fill="url(#gWater)"/>
+    <ellipse cx="200" cy="252" rx="60" ry="10" fill="#E8F6FA" opacity=".8"/>
+    <ellipse cx="200" cy="262" rx="96" ry="12" fill="#D5EDF3" opacity=".5"/>
+    <g fill="#1F3B34"><path d="M30 262l14-30 14 30Z"/><path d="M33 246l11-24 11 24Z"/><path d="M352 266l15-32 15 32Z"/><path d="M355 249l12-26 12 26Z"/></g>
+  </symbol>
+  <symbol id="ph2" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="url(#gSky)"/>
+    <path d="M0 130 90 60l90 62 80-52 70 48 70-26V300H0Z" fill="#7C9EB8"/>
+    <path d="M0 158 70 118l80 34 100-40 90 38 60-18V300H0Z" fill="#54798F"/>
+    <rect y="165" width="400" height="135" fill="url(#gWater)"/>
+    <path d="M138 208h124l-16 22H152Z" fill="#F4F7FA"/>
+    <rect x="172" y="186" width="46" height="24" rx="5" fill="#fff"/>
+    <rect x="178" y="192" width="10" height="8" rx="2" fill="#9FC4D6"/>
+    <rect x="194" y="192" width="10" height="8" rx="2" fill="#9FC4D6"/>
+    <path d="M228 208V182l20 26Z" fill="#E8EEF4"/>
+    <rect x="226" y="168" width="3" height="40" rx="1.5" fill="#B7C6D4"/>
+    <path d="M229 170h16l-4 5 4 5h-16Z" fill="#FF6B5E"/>
+    <path d="M96 240c20 6 40 6 60 0M244 244c22 6 44 6 66 0" stroke="#CDE9F1" stroke-width="4" fill="none" stroke-linecap="round" opacity=".7"/>
+  </symbol>
+  <symbol id="ph3" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="url(#gSky)"/>
+    <path d="M400 300V80c-56 6-102 38-124 84-16 34-22 66-26 136Z" fill="#8FA6BC"/>
+    <path d="M310 132l44-14M296 176l52-12M288 224l58-8" stroke="#7A92AA" stroke-width="5" stroke-linecap="round"/>
+    <rect y="252" width="400" height="48" fill="#2E4C44"/>
+    <g fill="#27443C"><path d="M40 258l22-52 22 52Z"/><path d="M46 232l16-38 16 38Z"/><path d="M110 260l19-44 19 44Z"/><path d="M115 238l14-32 14 32Z"/><path d="M180 262l16-38 16 38Z"/></g>
+    <g fill="#1F3B34"><path d="M70 266l24-56 24 56Z"/><path d="M76 238l18-42 18 42Z"/><path d="M150 268l21-48 21 48Z"/></g>
+    <path d="M84 90q8-9 16 0M118 76q6-7 12 0" stroke="#5B7A97" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="ph4" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="url(#gSkyWarm)"/>
+    <circle cx="200" cy="128" r="34" fill="#FFCF7D"/>
+    <path d="M0 150 80 96l86 52 76-64 84 58 74-34V300H0Z" fill="#6B5E86" opacity=".9"/>
+    <path d="M0 186 90 140l90 40 100-52 120 56V300H0Z" fill="#4A4468"/>
+    <rect y="196" width="400" height="104" fill="url(#gWaterWarm)"/>
+    <ellipse cx="200" cy="236" rx="26" ry="40" fill="#FFCF7D" opacity=".35"/>
+    <path d="M60 232h48M84 252h64M270 240h56M240 262h44" stroke="#EFC08D" stroke-width="3.5" stroke-linecap="round" opacity=".55"/>
+  </symbol>
+  <symbol id="ph5" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="url(#gPool)"/>
+    <path d="M40 80c60 24 120 24 180 0M110 140c70 26 140 26 210 0M20 200c80 28 170 28 260 0" stroke="#BFE6EF" stroke-width="5" fill="none" stroke-linecap="round" opacity=".5"/>
+    <ellipse cx="200" cy="64" rx="88" ry="20" fill="#E8F6FA" opacity=".85"/>
+    <ellipse cx="200" cy="84" rx="130" ry="24" fill="#D5EDF3" opacity=".45"/>
+    <g fill="#4E6B79"><rect x="36" y="244" width="86" height="44" rx="20"/><rect x="140" y="260" width="64" height="34" rx="16"/><rect x="290" y="248" width="78" height="42" rx="19" fill="#5C7A88"/></g>
+  </symbol>
+  <symbol id="ph6" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="#DCE7EC"/>
+    <g fill="#4E6E64" opacity=".38"><path d="M20 190l26-64 26 64Z"/><path d="M80 186l30-74 30 74Z"/><path d="M150 190l26-64 26 64Z"/><path d="M215 184l30-72 30 72Z"/><path d="M285 190l27-66 27 66Z"/></g>
+    <rect y="168" width="400" height="34" fill="#EFF5F7" opacity=".85"/>
+    <g fill="#27443C"><path d="M40 300l34-92 34 92Z"/><path d="M120 300l40-108 40 108Z"/><path d="M215 300l36-96 36 96Z"/><path d="M295 300l38-100 38 100Z"/></g>
+    <rect y="252" width="400" height="26" fill="#F4F8F9" opacity=".7"/>
+  </symbol>
+  <symbol id="phFood" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="#FFF3E0"/>
+    <circle cx="330" cy="54" r="72" fill="#FFE7C2" opacity=".7"/>
+    <ellipse cx="200" cy="226" rx="152" ry="36" fill="#F3DFC0"/>
+    <path d="M72 208A130 116 0 0 1 328 206c-84-32-172-32-256 2Z" fill="url(#gCheb)"/>
+    <path d="M74 206c84-33 170-33 252 0" stroke="#B96F1F" stroke-width="7" stroke-dasharray="2 12" stroke-linecap="round" fill="none"/>
+    <ellipse cx="150" cy="150" rx="12" ry="7" fill="#C97F26" opacity=".55"/>
+    <ellipse cx="230" cy="128" rx="14" ry="8" fill="#C97F26" opacity=".5"/>
+    <ellipse cx="282" cy="168" rx="10" ry="6" fill="#C97F26" opacity=".55"/>
+    <g fill="#E23D5B"><circle cx="96" cy="238" r="7"/><circle cx="110" cy="232" r="7"/><circle cx="124" cy="240" r="7"/><circle cx="103" cy="248" r="7"/><circle cx="117" cy="250" r="7"/></g>
+    <g fill="#D12A49"><circle cx="300" cy="244" r="6"/><circle cx="312" cy="238" r="6"/><circle cx="322" cy="248" r="6"/><circle cx="306" cy="252" r="6"/></g>
+    <path d="M130 222c8-10 20-14 30-12" stroke="#2E9E58" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M196 96c-4-12 4-16 0-26M220 100c-4-12 4-16 0-26" stroke="#C9A15E" stroke-width="4" stroke-linecap="round" fill="none" opacity=".6"/>
+  </symbol>
+  <symbol id="n1" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="url(#gSky)"/>
+    <rect y="150" width="400" height="150" fill="url(#gWater)"/>
+    <path d="M0 300V118c96 4 172 34 224 92 22 25 34 52 40 90Z" fill="#3E6B54"/>
+    <path d="M0 300v-56c60 4 116 20 158 56Z" fill="#EDD9A6"/>
+    <g fill="#27443C"><path d="M40 150l20-46 20 46Z"/><path d="M96 168l17-40 17 40Z"/></g>
+    <path d="M300 216h44M320 240h52" stroke="#CDE9F1" stroke-width="4" stroke-linecap="round" opacity=".6"/>
+  </symbol>
+  <symbol id="n2" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="url(#gSky)"/>
+    <path d="M0 172C80 120 200 108 400 150V300H0Z" fill="#4E7B58"/>
+    <rect y="226" width="400" height="74" fill="url(#gWater)"/>
+    <g><rect x="70" y="152" width="56" height="42" rx="4" fill="#F5EFE2"/><path d="M62 154h72l-36-30Z" fill="#B95C48"/><rect x="88" y="168" width="16" height="26" rx="2" fill="#7A5B43"/></g>
+    <g><rect x="180" y="146" width="50" height="38" rx="4" fill="#EFE6D2"/><path d="M173 148h64l-32-27Z" fill="#A34F3E"/><rect x="196" y="160" width="14" height="12" rx="2" fill="#9FC4D6"/></g>
+    <g><rect x="280" y="158" width="46" height="36" rx="4" fill="#F5EFE2"/><path d="M274 160h58l-29-24Z" fill="#C06A50"/></g>
+    <rect x="120" y="232" width="90" height="7" rx="3.5" fill="#8A6A48"/>
+    <rect x="132" y="239" width="5" height="18" fill="#75593C"/><rect x="188" y="239" width="5" height="18" fill="#75593C"/>
+  </symbol>
+  <symbol id="n3" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="url(#gSky)"/>
+    <rect y="140" width="400" height="160" fill="url(#gWater)"/>
+    <path d="M0 300V216c110-30 236-26 400 12v72Z" fill="#EDD9A6"/>
+    <path d="M0 226c96-24 208-24 320 0" stroke="#F7EBC8" stroke-width="6" fill="none" opacity=".8"/>
+    <g fill="#27443C"><path d="M310 232l24-56 24 56Z"/><path d="M318 204l16-38 16 38Z"/><path d="M262 240l18-42 18 42Z"/></g>
+    <path d="M60 176h50M90 196h60" stroke="#CDE9F1" stroke-width="4" stroke-linecap="round" opacity=".6"/>
+  </symbol>
+  <symbol id="mRoute" viewBox="0 0 400 160">
+    <rect width="400" height="160" fill="#E7F1F6"/>
+    <path d="M0 64C80 42 140 74 200 66c70-9 130 16 200-2V160H0Z" fill="#BFE0EC"/>
+    <path d="M0 64C80 42 140 74 200 66c70-9 130 16 200-2" stroke="#A5D2E2" stroke-width="3" fill="none"/>
+    <g fill="#7FA98B" opacity=".8"><circle cx="52" cy="30" r="10"/><circle cx="86" cy="22" r="13"/><circle cx="120" cy="32" r="9"/><circle cx="316" cy="20" r="11"/><circle cx="348" cy="30" r="9"/></g>
+    <path d="M42 122c80-24 148-10 208-36 48-21 82-24 114-32" stroke="#7B61FF" stroke-width="3.5" stroke-dasharray="1 9" stroke-linecap="round" fill="none"/>
+    <g><circle cx="42" cy="122" r="8" fill="#1EA65A"/><circle cx="42" cy="122" r="3" fill="#fff"/></g>
+    <g><circle cx="250" cy="86" r="8" fill="#7B61FF"/><circle cx="250" cy="86" r="3" fill="#fff"/></g>
+    <g><circle cx="364" cy="54" r="8" fill="#7B61FF"/><circle cx="364" cy="54" r="3" fill="#fff"/></g>
+  </symbol>
+  <symbol id="v1" viewBox="0 0 270 420">
+    <rect width="270" height="420" fill="url(#gSky)"/>
+    <circle cx="212" cy="64" r="34" fill="#FFF3CE" opacity=".8"/>
+    <path d="M0 176 60 116l70 54 68-64 72 60V420H0Z" fill="#6E93AE"/>
+    <path d="M0 420V190c44 0 80 18 102 48 20 28 28 92 32 182Z" fill="#33544D"/>
+    <path d="M270 420V186c-44 2-80 22-100 54-18 30-26 90-30 180Z" fill="#2C4A45"/>
+    <rect x="112" y="128" width="46" height="220" rx="13" fill="url(#gFall)"/>
+    <path d="M0 420v-64c56-10 100-14 135-14s79 4 135 14v64Z" fill="url(#gWater)"/>
+    <ellipse cx="135" cy="348" rx="52" ry="10" fill="#E8F6FA" opacity=".8"/>
+    <g fill="#1F3B34"><path d="M18 360l14-32 14 32Z"/><path d="M224 364l15-34 15 34Z"/></g>
+  </symbol>
+  <symbol id="v2" viewBox="0 0 270 420">
+    <rect width="270" height="420" fill="url(#gSky)"/>
+    <path d="M0 132 66 76l70 50 66-48 68 44V420H0Z" fill="#7C9EB8"/>
+    <path d="M0 156 60 120l76 30 74-34 60 32V420H0Z" fill="#54798F"/>
+    <rect y="162" width="270" height="258" fill="url(#gWater)"/>
+    <path d="M135 396c-30-60-46-118-24-170 18-42 44-64 60-104" stroke="#fff" stroke-width="3.5" stroke-dasharray="1 10" stroke-linecap="round" fill="none" opacity=".9"/>
+    <path d="M96 226h78l-10 15H106Z" fill="#F4F7FA"/>
+    <rect x="118" y="212" width="30" height="16" rx="4" fill="#fff"/>
+    <path d="M66 260c14 5 28 5 42 0M160 264c15 5 30 5 45 0" stroke="#CDE9F1" stroke-width="3.5" fill="none" stroke-linecap="round" opacity=".7"/>
+    <g><circle cx="171" cy="122" r="9" fill="#7B61FF"/><circle cx="171" cy="122" r="3.4" fill="#fff"/></g>
+  </symbol>
+  <symbol id="v3" viewBox="0 0 270 420">
+    <rect width="270" height="420" fill="url(#gSky)"/>
+    <path d="M0 190 70 120l68 56 64-62 68 58V420H0Z" fill="#5E8296"/>
+    <rect x="118" y="150" width="34" height="120" rx="10" fill="url(#gFall)"/>
+    <path d="M0 420V262c50-6 96-8 135-8s85 2 135 8v158Z" fill="#2E4C44"/>
+    <path d="M52 420l60-158h46l60 158Z" fill="#B98B5F"/>
+    <path d="M78 372h114M92 336h86M103 306h64M111 284h48" stroke="#96693F" stroke-width="5" stroke-linecap="round"/>
+    <path d="M52 420l60-158M218 420l-60-158" stroke="#7C5731" stroke-width="6" stroke-linecap="round"/>
+    <g fill="#1F3B34"><path d="M14 300l18-42 18 42Z"/><path d="M226 306l17-40 17 40Z"/><path d="M36 350l20-46 20 46Z"/></g>
+  </symbol>
+  <symbol id="avA" viewBox="0 0 80 80"><rect width="80" height="80" fill="url(#gAv1)"/><text x="40" y="43" text-anchor="middle" dominant-baseline="middle" font-family="Manrope,system-ui,sans-serif" font-size="32" font-weight="700" fill="#fff">А</text></symbol>
+  <symbol id="avM" viewBox="0 0 80 80"><rect width="80" height="80" fill="url(#gAv2)"/><text x="40" y="43" text-anchor="middle" dominant-baseline="middle" font-family="Manrope,system-ui,sans-serif" font-size="32" font-weight="700" fill="#fff">М</text></symbol>
+  <symbol id="avI" viewBox="0 0 80 80"><rect width="80" height="80" fill="url(#gAv3)"/><text x="40" y="43" text-anchor="middle" dominant-baseline="middle" font-family="Manrope,system-ui,sans-serif" font-size="32" font-weight="700" fill="#fff">И</text></symbol>
+</defs>
+</svg>
+<style>
+/* bottom booking bar (app-like) */
+.bottombar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(430px,100%);z-index:55;pointer-events:none}
+.bottombar .bb{display:flex;align-items:center;gap:12px;padding:11px 16px calc(12px + env(safe-area-inset-bottom));background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border-top:1px solid var(--line);transform:translateY(110%);transition:transform .45s var(--ease);pointer-events:auto}
+.bottombar.on .bb{transform:translateY(0)}
+.bb .bbp small{display:block;font:500 11.5px/1.4 var(--font);color:var(--muted)}
+.bb .bbp b{font:700 16px/1.2 var(--disp);font-variant-numeric:tabular-nums}
+.bb .bbp b span{font:500 12px/1 var(--font);color:var(--muted)}
+.bb .bbtn{margin-left:auto;border:0;border-radius:14px;padding:13px 22px;background:linear-gradient(135deg,#8B72FF,#6A4DF6);color:#fff;font:700 14px/1 var(--disp);cursor:pointer;box-shadow:0 12px 26px -10px rgba(90,63,240,.65);transition:transform .15s}
+.bb .bbtn:active{transform:scale(.95)}
+main{padding-bottom:86px}
+</style>
+
+<div class="progress" aria-hidden="true"><i id="bar"></i></div>
+<div class="topbar" id="topbar"><div class="tb">
+  <button class="tbtn" id="tbBack" aria-label="Назад"><svg class="ic" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iBack"/></svg></button>
+  <b>Водопад Корбу</b>
+  <span class="tbr"><svg width="13" height="13" fill="currentColor" stroke="none"><use href="#iStar"/></svg>4.8</span>
+</div></div>
+
+<div class="app">
+  <header class="hero" id="hero">
+    <svg class="hero-art" id="heroArt" viewBox="0 0 430 480" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="hSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7FA8CC"/><stop offset=".5" stop-color="#BAD6E6"/><stop offset="1" stop-color="#DCEBEF"/></linearGradient>
+        <clipPath id="hClip"><rect x="182" y="108" width="66" height="260" rx="18"/></clipPath>
+      </defs>
+      <rect width="430" height="480" fill="url(#hSky)"/>
+      <circle cx="330" cy="86" r="46" fill="#FFF6DC" opacity=".7"/>
+      <path d="M0 190 70 120l70 58 75-82 85 84 60-52 70 58V480H0Z" fill="#7C9EB8" opacity=".85"/>
+      <path d="M0 232 90 168l80 58 90-66 80 64 90-46V480H0Z" fill="#54798F"/>
+      <path d="M0 480V210c40-10 90 4 120 30 40 34 52 60 58 240Z" fill="#31514B"/>
+      <path d="M430 480V200c-40-4-90 14-120 44-38 38-52 62-58 236Z" fill="#2B4844"/>
+      <rect x="182" y="108" width="66" height="260" rx="18" fill="url(#gFall)"/>
+      <g clip-path="url(#hClip)"><g class="fall-move">
+        <g>
+          <rect x="192" y="96" width="6" height="70" rx="3" fill="#fff" opacity=".85"/>
+          <rect x="214" y="146" width="5" height="56" rx="2.5" fill="#fff" opacity=".7"/>
+          <rect x="232" y="112" width="6" height="64" rx="3" fill="#fff" opacity=".8"/>
+          <rect x="202" y="216" width="5" height="60" rx="2.5" fill="#fff" opacity=".75"/>
+          <rect x="224" y="256" width="6" height="70" rx="3" fill="#fff" opacity=".8"/>
+          <rect x="190" y="306" width="5" height="58" rx="2.5" fill="#fff" opacity=".7"/>
+          <rect x="236" y="326" width="5" height="52" rx="2.5" fill="#fff" opacity=".75"/>
+        </g>
+        <g transform="translate(0,-260)">
+          <rect x="192" y="96" width="6" height="70" rx="3" fill="#fff" opacity=".85"/>
+          <rect x="214" y="146" width="5" height="56" rx="2.5" fill="#fff" opacity=".7"/>
+          <rect x="232" y="112" width="6" height="64" rx="3" fill="#fff" opacity=".8"/>
+          <rect x="202" y="216" width="5" height="60" rx="2.5" fill="#fff" opacity=".75"/>
+          <rect x="224" y="256" width="6" height="70" rx="3" fill="#fff" opacity=".8"/>
+          <rect x="190" y="306" width="5" height="58" rx="2.5" fill="#fff" opacity=".7"/>
+          <rect x="236" y="326" width="5" height="52" rx="2.5" fill="#fff" opacity=".75"/>
+        </g>
+      </g></g>
+      <path d="M0 480v-84c80-16 150-24 215-24s135 8 215 24v84Z" fill="url(#gPool)"/>
+      <ellipse class="foam f1" cx="215" cy="382" rx="58" ry="12" fill="#EAF7FA" opacity=".85"/>
+      <ellipse class="foam f2" cx="215" cy="393" rx="88" ry="14" fill="#D6EEF4" opacity=".55"/>
+      <ellipse class="foam f3" cx="215" cy="406" rx="122" ry="16" fill="#CBE9F1" opacity=".35"/>
+      <g class="mist"><ellipse cx="176" cy="356" rx="34" ry="10" fill="#fff" opacity=".5"/><ellipse cx="258" cy="348" rx="30" ry="9" fill="#fff" opacity=".45"/></g>
+      <g fill="#1F3B34">
+        <path d="M14 436l20-42 20 42Z"/><path d="M19 414l15-34 15 34Z"/>
+        <path d="M52 448l24-52 24 52Z"/><path d="M58 422l18-40 18 40Z"/>
+        <path d="M372 440l21-46 21 46Z"/><path d="M377 416l16-36 16 36Z"/>
+        <path d="M338 452l18-40 18 40Z"/>
+      </g>
+      <path class="bird b1" d="M-10 92q7-8 14 0 7-8 14 0" stroke="#3C5B77" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <path class="bird b2" d="M-30 70q5-6 10 0 5-6 10 0" stroke="#3C5B77" stroke-width="2" fill="none" stroke-linecap="round"/>
+    </svg>
+    <div class="hero-shade"></div>
+    <div class="hero-top">
+      <button class="icbtn" data-demo="Это стартовый экран демо 🙂" aria-label="Назад"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#iBack"/></svg></button>
+      <span class="sp"></span>
+      <button class="icbtn" id="btnLike" aria-label="В избранное"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iHeart"/></svg></button>
+      <button class="icbtn" data-demo="Ссылка на место скопирована 🔗" aria-label="Поделиться"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iShare"/></svg></button>
+    </div>
+    <div class="hero-body" id="heroBody">
+      <span class="rating"><svg width="14" height="14" fill="currentColor" stroke="none"><use href="#iStar"/></svg>4.8</span>
+      <h1>Водопад Корбу</h1>
+      <p class="hero-sub">Телецкое озеро, Алтай</p>
+      <div class="hero-chips">
+        <span class="hchip"><svg class="ic" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iWave"/></svg>Только по воде</span>
+        <span class="hchip"><svg class="ic" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iClock"/></svg>~1 час на месте</span>
+        <span class="hchip ok"><svg class="ic" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#iCheck"/></svg>Легко</span>
+      </div>
+      <button class="cta" id="heroPlay">
+        <span class="pl"><svg width="16" height="16" fill="currentColor" stroke="none"><use href="#iPlay"/></svg></span>
+        Послушать Voyz-гид
+        <span class="tm">3:42</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="sec rv" id="videos">
+      <div class="sec-h"><h2>Видео</h2><button class="all" data-demo="Все видео появятся в полной версии 🎬">Смотреть все</button></div>
+      <div class="rail stag">
+        <button class="vcard" data-demo="Видеоплеер появится в полной версии 🎬">
+          <span class="vthumb"><svg class="fit" viewBox="0 0 270 420" preserveAspectRatio="xMidYMid slice"><use href="#v1"/></svg>
+            <span class="vplay"><svg width="18" height="18" fill="currentColor" stroke="none"><use href="#iPlay"/></svg></span>
+            <span class="vdur">0:28</span></span>
+          <span class="vcap">Как выглядит Корбу летом</span>
+        </button>
+        <button class="vcard" data-demo="Видеоплеер появится в полной версии 🎬">
+          <span class="vthumb"><svg class="fit" viewBox="0 0 270 420" preserveAspectRatio="xMidYMid slice"><use href="#v2"/></svg>
+            <span class="vplay"><svg width="18" height="18" fill="currentColor" stroke="none"><use href="#iPlay"/></svg></span>
+            <span class="vdur">0:41</span></span>
+          <span class="vcap">Как добраться до Корбу</span>
+        </button>
+        <button class="vcard" data-demo="Видеоплеер появится в полной версии 🎬">
+          <span class="vthumb"><svg class="fit" viewBox="0 0 270 420" preserveAspectRatio="xMidYMid slice"><use href="#v3"/></svg>
+            <span class="vplay"><svg width="18" height="18" fill="currentColor" stroke="none"><use href="#iPlay"/></svg></span>
+            <span class="vdur">0:36</span></span>
+          <span class="vcap">Что вас ждёт на месте</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="sec rv" id="photos">
+      <div class="sec-h"><h2>Фотографии</h2><button class="all" id="allPhotos">Смотреть все</button></div>
+      <div class="rail stag" id="photoRail"></div>
+    </section>
+
+    <section class="sec rv" id="about">
+      <div class="sec-h"><h2>Кратко о месте</h2></div>
+      <p>Один из самых известных водопадов Телецкого озера. Добраться можно только по воде — и в этом половина удовольствия. Особенно впечатляет после дождей, когда поток становится мощным и шумным.</p>
+    </section>
+
+    <section class="sec rv" id="why">
+      <div class="sec-h"><h2>Зачем ехать</h2></div>
+      <div class="stag" style="display:flex;flex-direction:column;gap:10px">
+        <div class="why go">
+          <b>Стоит ехать, если:</b>
+          <ul>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#iCheck"/></svg>Впервые на Телецком озере</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#iCheck"/></svg>Хочется большой водопад без долгих походов</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#iCheck"/></svg>Путешествуете на лодке или катере</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#iCheck"/></svg>Любите красивые фото и брызги</li>
+          </ul>
+        </div>
+        <div class="why skip">
+          <b>Можно пропустить, если:</b>
+          <ul>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#iX"/></svg>Очень мало времени</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#iX"/></svg>Не любите туристические места</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#iX"/></svg>Штормит или плохая погода</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec rv" id="gid">
+      <div class="sec-h"><h2>Voyz-гид</h2></div>
+      <div class="card audio" id="audioCard">
+        <div class="audio-top">
+          <span class="acover"><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#ph1"/></svg></span>
+          <div class="ainfo">
+            <b>История и легенды водопада Корбу<span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span></b>
+            <span>Аудио-гид · 3:42</span>
+          </div>
+          <button class="abtn" id="abtn" aria-label="Слушать">
+            <svg class="ip" width="20" height="20" fill="currentColor" stroke="none"><use href="#iPlay"/></svg>
+            <svg class="iq" width="20" height="20" fill="currentColor" stroke="none"><use href="#iPause"/></svg>
+          </button>
+        </div>
+        <div class="atrack" id="atrack" role="slider" aria-label="Перемотка" aria-valuemin="0" aria-valuemax="222" tabindex="0"><i></i><u></u></div>
+        <div class="atimes"><span id="tCur">0:00</span><span>3:42</span></div>
+      </div>
+    </section>
+
+    <section class="sec rv" id="details">
+      <div class="sec-h"><h2>Подробнее о месте</h2></div>
+      <p>Водопад Корбу — один из самых популярных на Телецком озере. Его высота — около 12 метров. Вода падает с отвесной скалы в живописное ущелье у подножия хребта Корбу. Место окружено тайгой и скалами.</p>
+      <div class="more" id="more"><div>
+        <p>Водопад находится на территории Алтайского заповедника, поэтому вход на тропу платный, а сходить с деревянного настила нельзя. У причала работает маленький рынок: чебуреки, мёд, травяные чаи.</p>
+        <p>Считается, что у Корбу особая энергетика — это одно из самых фотографируемых мест озера. Лучший свет — утром, когда солнце подсвечивает водяную пыль и над ущельем встаёт радуга.</p>
+      </div></div>
+      <button class="morebtn" id="moreBtn">Читать полностью<svg class="ic" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#iChev"/></svg></button>
+    </section>
+
+    <section class="sec rv" id="getting">
+      <div class="sec-h"><h2>Как добраться</h2></div>
+      <p>Только по воде: на катере или экскурсионном теплоходе. Из Артыбаша путь занимает 40–60 минут в одну сторону. От причала до водопада — деревянный настил, ~5 минут пешком.</p>
+      <div class="facts stag">
+        <span class="fact"><svg class="ic" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iBoat"/></svg>Лодка / катер</span>
+        <span class="fact"><svg class="ic" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iClock"/></svg>~40–60 мин</span>
+        <span class="fact"><svg class="ic" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iWave"/></svg>Только по воде</span>
+      </div>
+    </section>
+
+    <section class="sec rv" id="boats">
+      <div class="sec-h"><h2>Транспорт / лодки</h2><button class="all" data-demo="Полный список перевозчиков — в полной версии ⛵">Смотреть все</button></div>
+      <div class="card boat">
+        <div class="boat-top">
+          <span class="bthumb"><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#ph2"/></svg></span>
+          <div class="binfo">
+            <b>Катер «Алтай»</b>
+            <span class="route">Артыбаш → Корбу</span>
+            <span class="bprice">от 1 500 ₽ <span style="font:500 12px/1 var(--font);color:var(--muted)">/ чел.</span></span>
+          </div>
+        </div>
+        <div class="bmeta">
+          <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iUsers"/></svg>до 8 человек</span>
+          <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iClock"/></svg>45–60 мин</span>
+          <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iWave"/></svg>спасжилеты</span>
+        </div>
+        <div class="contact-row">
+          <button class="cbtn wa" data-demo="Откроется чат WhatsApp с капитаном 💬"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iWa"/></svg>WhatsApp</button>
+          <button class="cbtn tg" data-demo="Откроется чат в Telegram ✈️"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iSend"/></svg>Telegram</button>
+          <button class="cbtn ph" data-demo="Набираем капитана… 📞"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iPhone"/></svg>Звонок</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec rv" id="season">
+      <div class="sec-h"><h2>Когда лучше ехать</h2></div>
+      <div class="months stag">
+        <div class="mon"><b>Май</b><i class="dot d-good"></i><small>Хорошо</small></div>
+        <div class="mon best"><b>Июн</b><i class="dot d-best"></i><small>Отлично</small></div>
+        <div class="mon best"><b>Июл</b><i class="dot d-best"></i><small>Отлично</small></div>
+        <div class="mon best"><b>Авг</b><i class="dot d-best"></i><small>Отлично</small></div>
+        <div class="mon"><b>Сен</b><i class="dot d-good"></i><small>Хорошо</small></div>
+        <div class="mon"><b>Окт</b><i class="dot d-ok"></i><small>Можно</small></div>
+      </div>
+      <div class="legend">
+        <span><i class="dot d-best"></i>Отлично</span>
+        <span><i class="dot d-good"></i>Хорошо</span>
+        <span><i class="dot d-ok"></i>Можно</span>
+        <span><i class="dot d-no"></i>Ноя–Апр: не рекомендуется</span>
+      </div>
+    </section>
+
+    <section class="sec rv" id="difficulty">
+      <div class="sec-h"><h2>Сложность / доступность</h2></div>
+      <div class="diff stag">
+        <div class="dcell easy"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#iCheck"/></svg><b>Легко</b><small>без подготовки</small></div>
+        <div class="dcell"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iWalk"/></svg><b>Пешком ~5 мин</b><small>по настилу</small></div>
+        <div class="dcell"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iElev"/></svg><b>Перепад</b><small>небольшой</small></div>
+        <div class="dcell"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iChild"/></svg><b>Дети: да</b><small>за руку у воды</small></div>
+        <div class="dcell"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iUsers"/></svg><b>Пожилые: ок</b><small>в спокойном темпе</small></div>
+        <div class="dcell"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iAlert"/></svg><b>Коляска</b><small>будет сложно</small></div>
+      </div>
+    </section>
+
+    <section class="sec rv" id="bring">
+      <div class="sec-h"><h2>Что взять с собой</h2></div>
+      <div class="chips stag">
+        <span class="chip"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iShoe"/></svg>Удобную обувь</span>
+        <span class="chip"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iRain"/></svg>Дождевик</span>
+        <span class="chip"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iDrop"/></svg>Воду</span>
+        <span class="chip"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iCash"/></svg>Наличные</span>
+        <span class="chip"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iSpray"/></svg>Репеллент</span>
+      </div>
+    </section>
+
+    <section class="sec rv" id="important">
+      <div class="warn">
+        <svg class="ic" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iAlert"/></svg>
+        <div>
+          <b>Важно</b>
+          <p>После дождя настил и камни становятся скользкими — держите детей за руку. Купаться у водопада запрещено: сильное течение, вода +8…+10 °C. Вход на тропу заповедника платный, оплата наличными.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec rv" id="food">
+      <div class="sec-h"><h2>Что попробовать</h2></div>
+      <div class="card food" data-demo="Страница локальной кухни — скоро 🥟" role="button" tabindex="0">
+        <span class="fthumb"><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#phFood"/></svg></span>
+        <div class="fi">
+          <b>Чебурек с малиной</b>
+          <p>На рынке возле Корбу продают чебуреки с малиной. Ягода растёт в заповеднике Яйлю.</p>
+          <span class="frate"><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg>4.9 · 127 отметок</span>
+        </div>
+        <svg class="ic chev" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iChevR"/></svg>
+      </div>
+    </section>
+
+    <section class="sec rv" id="nearby">
+      <div class="sec-h"><h2>Что рядом</h2><button class="all" data-demo="Карта окрестностей — в полной версии 🗺️">Смотреть на карте</button></div>
+      <div class="rail stag">
+        <button class="ncard" data-demo="Страница «Мыс Кырсай» — скоро 📍">
+          <span class="nthumb"><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#n1"/></svg></span>
+          <b>Мыс Кырсай</b>
+          <small><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iBoat"/></svg>~20 мин на лодке</small>
+        </button>
+        <button class="ncard" data-demo="Страница «Яйлю» — скоро 📍">
+          <span class="nthumb"><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#n2"/></svg></span>
+          <b>Яйлю</b>
+          <small><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iBoat"/></svg>~30 мин на лодке</small>
+        </button>
+        <button class="ncard" data-demo="Страница «Эстэ» — скоро 📍">
+          <span class="nthumb"><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#n3"/></svg></span>
+          <b>Эстэ</b>
+          <small><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iBoat"/></svg>~40 мин на лодке</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="sec rv" id="routes">
+      <div class="sec-h"><h2>Маршруты</h2><button class="all" data-demo="Конструктор маршрутов — в полной версии 🧭">Смотреть все</button></div>
+      <div class="rail stag">
+        <div class="card rcard">
+          <div class="rmap"><svg class="fit" viewBox="0 0 400 160" preserveAspectRatio="xMidYMid slice"><use href="#mRoute"/></svg>
+            <button class="radd" data-demo="Маршрут добавлен в план ✨" aria-label="Добавить маршрут"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><use href="#iPlus"/></svg></button>
+          </div>
+          <div class="rbody">
+            <b>Корбу + Кырсай + Яйлю</b>
+            <div class="bmeta">
+              <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iClock"/></svg>4–5 часов</span>
+              <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iBoat"/></svg>На лодке</span>
+              <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iCash"/></svg>от 5 000 ₽</span>
+            </div>
+          </div>
+        </div>
+        <div class="card rcard">
+          <div class="rmap"><svg class="fit" viewBox="0 0 400 160" preserveAspectRatio="xMidYMid slice"><use href="#mRoute"/></svg>
+            <button class="radd" data-demo="Маршрут добавлен в план ✨" aria-label="Добавить маршрут"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><use href="#iPlus"/></svg></button>
+          </div>
+          <div class="rbody">
+            <b>Корбу-экспресс: только водопад</b>
+            <div class="bmeta">
+              <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iClock"/></svg>~2 часа</span>
+              <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iBoat"/></svg>На катере</span>
+              <span class="tag"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#iCash"/></svg>от 1 500 ₽</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec rv" id="book">
+      <div class="sec-h"><h2>Забронировать / контакты</h2></div>
+      <div class="card book">
+        <div class="book-top">
+          <span class="avatar"><svg class="fit" viewBox="0 0 80 80"><use href="#avI"/></svg></span>
+          <div class="bi">
+            <b>Иван</b>
+            <span>Перевозчик по Телецкому озеру</span>
+            <span class="tel">+7 913 123-45-67</span>
+          </div>
+        </div>
+        <div class="contact-row">
+          <button class="cbtn wa" data-demo="Откроется чат WhatsApp с Иваном 💬"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iWa"/></svg>WhatsApp</button>
+          <button class="cbtn tg" data-demo="Откроется чат в Telegram ✈️"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iSend"/></svg>Telegram</button>
+          <button class="cbtn ph" data-demo="Набираем Ивана… 📞"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#iPhone"/></svg>Позвонить</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec rv" id="reviews">
+      <div class="sec-h"><h2>Отзывы путешественников</h2><button class="all" data-demo="Все 214 отзывов — в полной версии 💬">Смотреть все</button></div>
+      <div class="stag" style="display:flex;flex-direction:column;gap:10px">
+        <div class="card review">
+          <div class="rhead">
+            <span class="avatar sm"><svg class="fit" viewBox="0 0 80 80"><use href="#avA"/></svg></span>
+            <div class="ri"><b>Андрей</b><span>2 недели назад</span></div>
+            <span class="stars"><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg></span>
+          </div>
+          <p>Были в конце июня — воды много, брызги долетают до смотровой площадки. Берите дождевик и прячьте телефон! Сам водопад — мощь.</p>
+          <div class="rphotos"><span><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#ph5"/></svg></span><span><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#ph3"/></svg></span></div>
+        </div>
+        <div class="card review">
+          <div class="rhead">
+            <span class="avatar sm"><svg class="fit" viewBox="0 0 80 80"><use href="#avM"/></svg></span>
+            <div class="ri"><b>Мария</b><span>месяц назад</span></div>
+            <span class="stars"><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg><svg fill="currentColor" stroke="none"><use href="#iStar"/></svg></span>
+          </div>
+          <p>Ехали на катере из Артыбаша — 40 минут, и сама дорога уже экскурсия. У причала берите чебурек с малиной, это отдельный аттракцион 🙂</p>
+          <div class="rphotos"><span><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#ph2"/></svg></span><span><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#phFood"/></svg></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec rv" id="update">
+      <div class="update">
+        <h3>Заметили изменения?</h3>
+        <p>Помогите другим путешественникам — отметьте, что поменялось на месте.</p>
+        <div class="uchips" id="uchips">
+          <button class="uchip">Цена изменилась</button>
+          <button class="uchip">Дорога закрыта</button>
+          <button class="uchip">Предупреждение</button>
+          <button class="uchip">Другое</button>
+        </div>
+        <button class="ubtn" id="ubtn">Отправить</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="foot"><b>Voyz</b> · демо страницы достопримечательности<br>Сделано с любовью к Алтаю</div>
+</div>
+
+<div class="bottombar" id="bottombar"><div class="bb">
+  <div class="bbp"><small>Катер из Артыбаша</small><b>от 1 500 ₽ <span>/ чел.</span></b></div>
+  <button class="bbtn" id="bbBook">Забронировать</button>
+</div></div>
+
+<div class="lb" id="lb" role="dialog" aria-label="Галерея фотографий">
+  <div class="lb-top"><b id="lbCount">1 / 6</b>
+    <button class="icbtn" id="lbClose" aria-label="Закрыть"><svg class="ic" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><use href="#iX"/></svg></button>
+  </div>
+  <div class="lb-rail" id="lbRail"></div>
+  <div class="lb-cap" id="lbCap">Водопад Корбу</div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ── toast ─────────────────────────────────────────── */
+  let toastT;
+  const toast = msg => {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  };
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-demo]');
+    if (el) toast(el.dataset.demo);
+  });
+
+  /* ── scroll reveal ─────────────────────────────────── */
+  const io = new IntersectionObserver(es => {
+    for (const en of es) if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+  }, { threshold: .1, rootMargin: '0px 0px -36px' });
+  $$('.rv,.stag').forEach(el => io.observe(el));
+
+  /* ── progress bar, topbar, bottombar, hero parallax ── */
+  const bar = $('#bar'), tb = $('#topbar'), bb = $('#bottombar'),
+        hero = $('#hero'), art = $('#heroArt'), hb = $('#heroBody');
+  let ticking = false;
+  const onScroll = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      const y = scrollY, hh = hero.offsetHeight;
+      const max = document.documentElement.scrollHeight - innerHeight;
+      bar.style.transform = `scaleX(${max > 0 ? y / max : 0})`;
+      tb.classList.toggle('on', y > hh - 64);
+      bb.classList.toggle('on', y > hh - 64 && max - y > 260);
+      if (!reduced && y < hh) {
+        art.style.transform = `translateY(${y * .36}px) scale(${1 + y / 2600})`;
+        hb.style.opacity = String(Math.max(0, 1 - y / (hh * .72)));
+        hb.style.transform = `translateY(${y * .14}px)`;
+      }
+      ticking = false;
+    });
+  };
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+  const smooth = el => el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  $('#tbBack').addEventListener('click', () => scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }));
+  $('#bbBook').addEventListener('click', () => smooth($('#book')));
+
+  /* ── like ──────────────────────────────────────────── */
+  $('#btnLike').addEventListener('click', function () {
+    this.classList.toggle('liked');
+    toast(this.classList.contains('liked') ? 'Сохранено в избранное 💜' : 'Убрано из избранного');
+  });
+
+  /* ── audio guide (demo player) ─────────────────────── */
+  const DUR = 222;
+  let pos = 0, playing = false, timer = null;
+  const audioCard = $('#audioCard'), track = $('#atrack'), tCur = $('#tCur');
+  const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const render = () => {
+    track.style.setProperty('--p', (pos / DUR * 100).toFixed(2) + '%');
+    track.setAttribute('aria-valuenow', String(Math.round(pos)));
+    tCur.textContent = fmt(pos);
+  };
+  const setPlay = p => {
+    playing = p;
+    audioCard.classList.toggle('playing', p);
+    clearInterval(timer);
+    if (p) timer = setInterval(() => {
+      pos += 1;
+      if (pos >= DUR) { pos = 0; setPlay(false); toast('Аудиогид дослушан — хорошей поездки! 🎧'); }
+      render();
+    }, 1000);
+  };
+  $('#abtn').addEventListener('click', () => setPlay(!playing));
+  $('#heroPlay').addEventListener('click', () => {
+    smooth($('#gid'));
+    setTimeout(() => setPlay(true), reduced ? 0 : 500);
+  });
+  const seek = e => {
+    const r = track.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    pos = Math.round(Math.min(Math.max(x / r.width, 0), 1) * DUR);
+    render();
+  };
+  track.addEventListener('pointerdown', e => { seek(e); track.setPointerCapture(e.pointerId); });
+  track.addEventListener('pointermove', e => { if (e.buttons) seek(e); });
+  track.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') { pos = Math.min(DUR, pos + 10); render(); }
+    if (e.key === 'ArrowLeft') { pos = Math.max(0, pos - 10); render(); }
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setPlay(!playing); }
+  });
+  render();
+
+  /* ── read more ─────────────────────────────────────── */
+  const more = $('#more'), moreBtn = $('#moreBtn');
+  moreBtn.addEventListener('click', () => {
+    const open = more.classList.toggle('open');
+    moreBtn.classList.toggle('open', open);
+    moreBtn.firstChild.textContent = open ? 'Свернуть' : 'Читать полностью';
+  });
+
+  /* ── photo gallery + lightbox ──────────────────────── */
+  const PHOTOS = [
+    ['ph1', 'Водопад Корбу после дождей'],
+    ['ph2', 'Катер по пути из Артыбаша'],
+    ['ph3', 'Скалы и тайга у хребта Корбу'],
+    ['ph4', 'Закат над Телецким озером'],
+    ['ph5', 'Чаша водопада — вода +8 °C'],
+    ['ph6', 'Утренний туман в кедраче'],
+  ];
+  const rail = $('#photoRail');
+  rail.innerHTML = PHOTOS.slice(0, 4).map(([id], i) =>
+    `<button class="ptile" data-i="${i}" aria-label="Открыть фото"><svg class="fit" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><use href="#${id}"/></svg>${i === 3 ? `<span class="pmore">+${PHOTOS.length - 4}</span>` : ''}</button>`
+  ).join('');
+  const lb = $('#lb'), lbRail = $('#lbRail'), lbCount = $('#lbCount'), lbCap = $('#lbCap');
+  lbRail.innerHTML = PHOTOS.map(([id]) =>
+    `<div class="lb-slide"><svg viewBox="0 0 400 300"><use href="#${id}"/></svg></div>`
+  ).join('');
+  let lbOpen = false;
+  const updLb = () => {
+    const i = Math.round(lbRail.scrollLeft / lbRail.clientWidth);
+    const k = Math.min(Math.max(i, 0), PHOTOS.length - 1);
+    lbCount.textContent = `${k + 1} / ${PHOTOS.length}`;
+    lbCap.textContent = PHOTOS[k][1];
+  };
+  const openLb = i => {
+    lbOpen = true;
+    lb.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    requestAnimationFrame(() => { lbRail.scrollLeft = i * lbRail.clientWidth; updLb(); });
+  };
+  const closeLb = () => {
+    lbOpen = false;
+    lb.classList.remove('open');
+    document.body.style.overflow = '';
+  };
+  rail.addEventListener('click', e => {
+    const t = e.target.closest('.ptile');
+    if (t) openLb(+t.dataset.i);
+  });
+  $('#allPhotos').addEventListener('click', () => openLb(0));
+  $('#lbClose').addEventListener('click', closeLb);
+  lb.addEventListener('click', e => { if (e.target === lb || e.target.classList.contains('lb-slide')) closeLb(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && lbOpen) closeLb(); });
+  lbRail.addEventListener('scroll', () => requestAnimationFrame(updLb), { passive: true });
+
+  /* ── «заметили изменения?» ─────────────────────────── */
+  $('#uchips').addEventListener('click', e => {
+    const c = e.target.closest('.uchip');
+    if (c) c.classList.toggle('sel');
+  });
+  $('#ubtn').addEventListener('click', () => {
+    const sel = $$('.uchip.sel');
+    if (!sel.length) { toast('Сначала выберите, что изменилось 🙂'); return; }
+    sel.forEach(c => c.classList.remove('sel'));
+    toast('Спасибо! Передадим гидам и обновим страницу 💜');
+  });
+})();
+</script>
+
+</body>
+</html>
