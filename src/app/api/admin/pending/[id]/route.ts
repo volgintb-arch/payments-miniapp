@@ -6,6 +6,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getAuthUser } from '@/lib/api-helpers';
+import { cancelInOmg } from '@/lib/omg/client';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
@@ -26,6 +27,7 @@ export async function DELETE(
     );
   }
   await prisma.payment.delete({ where: { id } });
+  cancelInOmg(id).catch(() => {});
   return Response.json({ ok: true, deleted: id });
 }
 

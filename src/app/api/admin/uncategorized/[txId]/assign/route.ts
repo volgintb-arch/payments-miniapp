@@ -20,6 +20,7 @@ import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
 import { getAuthUser, badRequest } from '@/lib/api-helpers';
 import { sendToGroup } from '@/lib/telegram';
+import { syncPaymentToOmg } from '@/lib/omg/client';
 
 function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
   if (u.telegramUsername) return `@${u.telegramUsername}`;
@@ -233,6 +234,13 @@ export async function POST(
       { status: 502 },
     );
   }
+
+  // 7b. Зеркало в omg-finance: разнос выписки с контекстом Adesk-tx
+  // (счёт, дата, описание с маской карты) — пара ищется точнее.
+  syncPaymentToOmg(payment.id, {
+    kind: 'ASSIGN',
+    adeskTx: { bankAccountId, date: dateIso.slice(0, 10), amount, description: txDescForCard || null },
+  }).catch(() => {});
 
   // 8. Telegram-уведомление в чат — в том же формате, что и обычная подача
   // «Расход»/POST /api/payments. Собираем текст, потом сохраняем в Payment

@@ -22,6 +22,7 @@
 import { prisma } from './db';
 import { adesk } from './adesk/client';
 import type { AdeskTransaction } from './adesk/types';
+import { syncPaymentToOmg } from './omg/client';
 
 export type MatchResult =
   | { status: 'matched'; transactionIds: number[]; existingDescription?: string }
@@ -338,6 +339,9 @@ export async function processRetroMatch(paymentId: string): Promise<MatchResult>
       // При переходе в MATCHED убираем висящие записи о конфликтах,
       // чтобы они не торчали в админке как «требует разбора».
       await prisma.matchConflict.deleteMany({ where: { paymentId } });
+
+      // Зеркало в omg-finance — теперь с Adesk-id транзакции.
+      syncPaymentToOmg(paymentId).catch(() => {});
     }
   } else if (result.status === 'needs_review') {
     await prisma.payment.update({

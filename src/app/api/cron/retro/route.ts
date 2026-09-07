@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db';
 import { processRetroMatch } from '@/lib/retro-match';
 import { adesk } from '@/lib/adesk/client';
 import { sendToGroup } from '@/lib/telegram';
+import { syncPaymentToOmg } from '@/lib/omg/client';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 const STALE_NOTIFY_HOURS = 24;
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
             },
           });
           results.push({ paymentId: payment.id, method: 'cash', result: 'created' });
+          syncPaymentToOmg(payment.id).catch(() => {});
         } else {
           await prisma.payment.update({
             where: { id: payment.id },

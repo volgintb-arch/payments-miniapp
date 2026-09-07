@@ -21,6 +21,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getAuthUser } from '@/lib/api-helpers';
+import { unbindInOmg } from '@/lib/omg/client';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
@@ -57,6 +58,9 @@ export async function POST(
       matchedAt: null,
     },
   });
+
+  // Зеркало в omg-finance: там платёж снова ждёт пару.
+  unbindInOmg(id).catch(() => {});
 
   return Response.json({
     ok: true,

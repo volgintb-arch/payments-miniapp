@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
 import { adesk } from '@/lib/adesk/client';
 import { sendToGroup } from '@/lib/telegram';
+import { syncIncomeToOmg } from '@/lib/omg/client';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -135,6 +136,9 @@ export async function POST(request: NextRequest) {
       data: { status: 'FAILED' },
     });
   }
+
+  // Зеркало в omg-finance: приход по кассе создаётся там сразу.
+  syncIncomeToOmg(income.id).catch(() => {});
 
   return Response.json(
     { income: { ...income, amount: Number(income.amount) } },

@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db';
 import { requireAuth, badRequest } from '@/lib/api-helpers';
 import { adesk } from '@/lib/adesk/client';
 import { editGroupMessage } from '@/lib/telegram';
+import { syncPaymentToOmg } from '@/lib/omg/client';
 
 export async function PATCH(
   request: NextRequest,
@@ -137,6 +138,9 @@ export async function PATCH(
       console.error('[payment edit] telegram edit failed:', err);
     }
   }
+
+  // Зеркало в omg-finance: правка разнесения уходит и туда.
+  syncPaymentToOmg(id).catch(() => {});
 
   return Response.json({ payment: { ...updated, amount: Number(updated.amount) } });
 }
