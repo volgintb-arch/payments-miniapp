@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
 import { denyUnlessRole } from '@/lib/api-helpers';
+import { cancelInOmg, syncIncomeToOmg } from '@/lib/omg/client';
 
 
 export async function POST(
@@ -46,6 +47,7 @@ export async function POST(
       where: { id },
       data: { status: 'MATCHED', adeskTransactionId: txId, matchedAt: new Date() },
     });
+    syncIncomeToOmg(id).catch(() => {});
     return Response.json({ ok: true, transactionId: txId });
   } catch (err) {
     await prisma.cashIncome.update({ where: { id }, data: { status: 'FAILED' } });
@@ -72,5 +74,6 @@ export async function DELETE(
     );
   }
   await prisma.cashIncome.delete({ where: { id } });
+  cancelInOmg(id).catch(() => {});
   return Response.json({ ok: true });
 }

@@ -15,6 +15,7 @@ import { sendToGroup, sanitizeChatId } from '@/lib/telegram';
 import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
 import { isValidSafeId } from '@/lib/safes';
 import { isValidExpenseCategoryForUnit } from '@/lib/category-validation';
+import { syncPaymentToOmg } from '@/lib/omg/client';
 
 function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
   if (u.telegramUsername) return `@${u.telegramUsername}`;
@@ -403,6 +404,10 @@ export async function POST(request: NextRequest) {
       console.error(`Retro-match failed for payment ${payment.id}:`, err);
     });
   }
+
+  // Зеркало в omg-finance: наличные — уже с Adesk-id транзакции, карта —
+  // как есть (там своя поисковая пара по карте/сумме/дате). Fire-and-forget.
+  syncPaymentToOmg(payment.id).catch(() => {});
 
   return Response.json(
     { payment: { ...payment, amount: Number(payment.amount) } },

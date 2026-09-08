@@ -6,6 +6,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { denyUnlessRole } from '@/lib/api-helpers';
+import { cancelInOmg } from '@/lib/omg/client';
 
 
 export async function DELETE(
@@ -24,5 +25,6 @@ export async function DELETE(
     );
   }
   await prisma.payment.delete({ where: { id } });
+  cancelInOmg(id).catch(() => {});
   return Response.json({ ok: true, deleted: id });
 }

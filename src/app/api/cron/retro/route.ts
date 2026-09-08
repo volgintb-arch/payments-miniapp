@@ -9,6 +9,7 @@ import { processRetroMatch } from '@/lib/retro-match';
 import { sendToGroup } from '@/lib/telegram';
 import { denyUnlessCronSecret, isUniqueViolation } from '@/lib/api-helpers';
 import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
+import { syncPaymentToOmg } from '@/lib/omg/client';
 
 const STALE_NOTIFY_HOURS = 24;
 const ORPHAN_AFTER_DAYS = 5;
@@ -88,6 +89,7 @@ export async function GET(request: Request) {
               },
             });
             results.push({ paymentId: payment.id, method: 'cash', result: reused ? 'reused' : 'created' });
+            syncPaymentToOmg(payment.id).catch(() => {});
           } catch (err) {
             if (isUniqueViolation(err)) {
               // Найденная/созданная tx уже привязана к другому платежу.

@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
 import { denyUnlessRole, isUniqueViolation } from '@/lib/api-helpers';
+import { syncPaymentToOmg } from '@/lib/omg/client';
 
 
 export async function POST(
@@ -143,6 +144,9 @@ export async function POST(
 
   // Снимаем висящие записи о конфликтах для этого платежа.
   await prisma.matchConflict.deleteMany({ where: { paymentId: id } });
+
+  // Зеркало в omg-finance.
+  syncPaymentToOmg(id).catch(() => {});
 
   return Response.json({
     ok: true,

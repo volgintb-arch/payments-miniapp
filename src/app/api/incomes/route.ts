@@ -8,6 +8,7 @@ import { createTransactionIdempotent } from '@/lib/adesk/idempotent';
 import { sendToGroup, sanitizeChatId } from '@/lib/telegram';
 import { isValidSafeId } from '@/lib/safes';
 import { isValidIncomeCategory } from '@/lib/category-validation';
+import { syncIncomeToOmg } from '@/lib/omg/client';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
@@ -168,6 +169,9 @@ export async function POST(request: NextRequest) {
       data: { status: 'FAILED' },
     });
   }
+
+  // Зеркало в omg-finance: приход по кассе создаётся там сразу.
+  syncIncomeToOmg(income.id).catch(() => {});
 
   // Возвращаем актуальный статус, а не stale 'PENDING' из момента создания —
   // иначе пользователь считает, что приход прошёл, хотя он FAILED.

@@ -21,6 +21,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { denyUnlessRole } from '@/lib/api-helpers';
+import { unbindInOmg } from '@/lib/omg/client';
 
 
 export async function POST(
@@ -75,6 +76,9 @@ export async function POST(
       matchedAt: null,
     },
   });
+
+  // Зеркало в omg-finance: там платёж снова ждёт пару.
+  unbindInOmg(id).catch(() => {});
 
   return Response.json({
     ok: true,
