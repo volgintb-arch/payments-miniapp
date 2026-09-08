@@ -123,8 +123,8 @@ function cardSuffixOf(cardNote: string | null | undefined): string | null {
  */
 export async function buildPaymentPayload(
   paymentId: string,
-  opts: { kind?: 'ASSIGN'; adeskTx?: OmgPaymentPayload['adeskTx'] } = {},
-): Promise<OmgPaymentPayload | null> {
+  opts: { kind?: 'ASSIGN'; adeskTx?: OmgPaymentPayload['adeskTx']; operationId?: string } = {},
+): Promise<(OmgPaymentPayload & { operationId?: string }) | null> {
   const p = await prisma.payment.findUnique({
     where: { id: paymentId },
     include: { splits: { orderBy: { sortOrder: 'asc' } }, user: { select: { telegramUsername: true, firstName: true, lastName: true } } },
@@ -162,6 +162,7 @@ export async function buildPaymentPayload(
     adeskTx: opts.adeskTx ?? null,
     parts,
     miniappStatus: p.status,
+    ...(opts.operationId ? { operationId: opts.operationId } : {}),
   };
 }
 
@@ -194,6 +195,36 @@ export async function buildIncomePayload(incomeId: string): Promise<OmgPaymentPa
     parts: null,
     miniappStatus: i.status,
   };
+}
+
+// ── «Неопознанные» из omg-finance ───────────────────────────────────────
+
+export type OmgUncategorizedItem = {
+  txId: string;
+  amount: number;
+  date: string; // DD.MM.YYYY
+  description: string;
+  isCard: boolean;
+  cardSuffix: string | null;
+  bankAccount: { id: number; name: string; legalEntity: string | null };
+};
+
+/** Список операций без статьи из omg-finance (бросает — вызывающий показывает ошибку). */
+export async function fetchOmgUncategorized(days: number, withNonCard: boolean): Promise<{ items: OmgUncategorizedItem[]; total: number }> {
+  if (!omgEnabled()) throw new Error('omg-finance не настроен (OMG_API_URL / OMG_API_SECRET)');
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE}/api/miniapp/uncategorized?days=${days}${withNonCard ? '&withNonCard=1' : ''}`, {
+      headers: { Authorization: `Bearer ${SECRET}` },
+      signal: controller.signal,
+    });
+    const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; data?: { items: OmgUncategorizedItem[]; total: number } } | null;
+    if (!res.ok || !data?.ok || !data.data) throw new Error(data?.error || `omg-finance ответил ${res.status}`);
+    return data.data;
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 // ── Публичные вызовы (не бросают) ───────────────────────────────────────

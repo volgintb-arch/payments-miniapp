@@ -21,6 +21,7 @@ import { adesk } from '@/lib/adesk/client';
 import { getAuthUser, badRequest, isUniqueViolation, parsePositiveAmount } from '@/lib/api-helpers';
 import { sendToGroup } from '@/lib/telegram';
 import { syncPaymentToOmg } from '@/lib/omg/client';
+import { processRetroMatch } from '@/lib/retro-match';
 
 function authorTag(u: { telegramUsername: string | null; firstName: string; lastName: string | null }): string {
   if (u.telegramUsername) return `@${u.telegramUsername}`;
@@ -50,11 +51,17 @@ export async function POST(
   }
 
   const txIdRaw = (await ctx.params).txId;
-  const txId = Number(txIdRaw);
-  if (!Number.isFinite(txId) || txId <= 0) return badRequest('Invalid txId');
-
   const body = await request.json().catch(() => null);
   if (!body) return badRequest('Invalid JSON');
+
+  // source=omg: строка в списке — операция omg-finance, а не Adesk-tx.
+  // Payment создаётся без Adesk-id (PENDING_RETRO): ретро-матч найдёт
+  // ту же покупку в Adesk по сумме/карте/дате и разнесёт там; в
+  // omg-finance разнос уходит сразу по id операции.
+  const source: 'adesk' | 'omg' = body.source === 'omg' ? 'omg' : 'adesk';
+  const omgOperationId = source === 'omg' ? String(txIdRaw) : null;
+  const txId = source === 'omg' ? 0 : Number(txIdRaw);
+  if (source === 'adesk' && (!Number.isFinite(txId) || txId <= 0)) return badRequest('Invalid txId');
 
   const rawDescription = typeof body.description === 'string' ? body.description.trim() : '';
   if (!rawDescription) return badRequest('description обязателен');
@@ -63,7 +70,7 @@ export async function POST(
   const dateIso = typeof body.dateIso === 'string' ? body.dateIso : null;
   // Сумма — строго положительная (было: !amount пропускал отрицательные).
   const amount = parsePositiveAmount(body.amount);
-  if (!bankAccountId || !dateIso || amount === null) {
+  if ((source === 'adesk' && !bankAccountId) || !dateIso || amount === null) {
     return badRequest('bankAccountId, dateIso, положительный amount обязательны (контекст tx)');
   }
   // dateIso — валидная дата YYYY-MM-DD (было: мусор → Invalid Date → 500).
@@ -118,11 +125,14 @@ export async function POST(
     }
   }
 
-  // 1. Ещё не занята другим Payment?
-  const already = await prisma.payment.findFirst({
-    where: { adeskConfirmedTransactionId: txId },
-    select: { id: true, userId: true },
-  });
+  // 1. Ещё не занята другим Payment? (для omg-источника занятость
+  // проверяет omg-finance: одна операция — один платёж.)
+  const already = source === 'adesk'
+    ? await prisma.payment.findFirst({
+        where: { adeskConfirmedTransactionId: txId },
+        select: { id: true, userId: true },
+      })
+    : null;
   if (already) {
     return Response.json(
       { error: 'Transaction already bound to another payment', paymentId: already.id },
@@ -242,9 +252,9 @@ export async function POST(
         description: rawDescription,
         cardNote,
         paymentMethod: 'card',
-        status: 'MATCHED',
-        adeskConfirmedTransactionId: txId,
-        matchedAt: new Date(),
+        status: source === 'omg' ? 'PENDING_RETRO' : 'MATCHED',
+        adeskConfirmedTransactionId: source === 'omg' ? null : txId,
+        matchedAt: source === 'omg' ? null : new Date(),
         splits: hasSplits
           ? {
               create: splitsWithSnapshots.map((s, idx) => ({
@@ -291,40 +301,50 @@ export async function POST(
     if (adeskContractorId) adeskUpdates.contractorId = adeskContractorId;
   }
 
-  try {
-    await adesk.updateTransaction(txId, adeskUpdates);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // Таймаут — особый случай: Adesk мог применить апдейт уже ПОСЛЕ того, как
-    // клиент отвалился. Удалять Payment тут нельзя (в Adesk tx осталась бы
-    // категоризированной и исчезла из «Неопознанных», а в БД её нет —
-    // повторить разнос невозможно). Оставляем Payment MATCHED: если апдейт
-    // не прошёл, tx просто останется без категории и вернётся во вкладку.
-    if (/timeout/i.test(msg)) {
-      console.error(`[uncategorized/assign] Adesk timeout for tx=${txId}, payment ${payment.id} left MATCHED (Adesk may have applied):`, msg);
+  if (source === 'omg') {
+    // Adesk-id у операции нет: ретро-матч найдёт ту же покупку в Adesk по
+    // сумме/карте/дате и разнесёт там (fire-and-forget), omg-finance —
+    // ниже, сразу по id операции.
+    processRetroMatch(payment.id).catch((err) => {
+      console.error(`[uncategorized/assign] retro-match after omg assign failed for ${payment.id}:`, err);
+    });
+  } else {
+    try {
+      await adesk.updateTransaction(txId, adeskUpdates);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Таймаут — особый случай: Adesk мог применить апдейт уже ПОСЛЕ того, как
+      // клиент отвалился. Удалять Payment тут нельзя (в Adesk tx осталась бы
+      // категоризированной и исчезла из «Неопознанных», а в БД её нет —
+      // повторить разнос невозможно). Оставляем Payment MATCHED: если апдейт
+      // не прошёл, tx просто останется без категории и вернётся во вкладку.
+      if (/timeout/i.test(msg)) {
+        console.error(`[uncategorized/assign] Adesk timeout for tx=${txId}, payment ${payment.id} left MATCHED (Adesk may have applied):`, msg);
+        return Response.json(
+          { ok: true, paymentId: payment.id, txId, warning: 'adesk_timeout_unconfirmed' },
+        );
+      }
+      // Явная ошибка — откатываем Payment (splits каскадом). delete под своим
+      // try/catch: если и он упал, логируем orphan, но не роняем ответ 500.
+      try {
+        await prisma.payment.delete({ where: { id: payment.id } });
+      } catch (delErr) {
+        console.error(`[uncategorized/assign] ORPHAN payment ${payment.id}: delete failed after Adesk error:`, delErr);
+      }
+      console.error(`[uncategorized/assign] Adesk update failed for tx=${txId}, payment rolled back:`, msg);
       return Response.json(
-        { ok: true, paymentId: payment.id, txId, warning: 'adesk_timeout_unconfirmed' },
+        { error: msg || 'Adesk update failed' },
+        { status: 502 },
       );
     }
-    // Явная ошибка — откатываем Payment (splits каскадом). delete под своим
-    // try/catch: если и он упал, логируем orphan, но не роняем ответ 500.
-    try {
-      await prisma.payment.delete({ where: { id: payment.id } });
-    } catch (delErr) {
-      console.error(`[uncategorized/assign] ORPHAN payment ${payment.id}: delete failed after Adesk error:`, delErr);
-    }
-    console.error(`[uncategorized/assign] Adesk update failed for tx=${txId}, payment rolled back:`, msg);
-    return Response.json(
-      { error: msg || 'Adesk update failed' },
-      { status: 502 },
-    );
   }
 
   // 7b. Зеркало в omg-finance: разнос выписки с контекстом Adesk-tx
   // (счёт, дата, описание с маской карты) — пара ищется точнее.
   syncPaymentToOmg(payment.id, {
     kind: 'ASSIGN',
-    adeskTx: { bankAccountId, date: dateIso.slice(0, 10), amount, description: txDescForCard || null },
+    operationId: omgOperationId ?? undefined,
+    adeskTx: { bankAccountId: bankAccountId || null, date: dateIso.slice(0, 10), amount, description: txDescForCard || null },
   }).catch(() => {});
 
   // 8. Telegram-уведомление в чат — в том же формате, что и обычная подача

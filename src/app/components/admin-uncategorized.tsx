@@ -5,8 +5,11 @@ import { apiFetch } from '@/lib/hooks/use-api';
 import { todayLocalIso } from '@/lib/date';
 import { matchesSearch } from '@/lib/search';
 
+type Source = 'adesk' | 'omg';
+
 type UncategorizedTx = {
-  txId: number;
+  // Adesk: числовой id транзакции; omg: строковый id операции omg-finance.
+  txId: number | string;
   amount: number;
   date: string; // "DD.MM.YYYY"
   description: string;
@@ -71,7 +74,17 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(7);
-  const [openTxId, setOpenTxId] = useState<number | null>(null);
+  const [openTxId, setOpenTxId] = useState<number | string | null>(null);
+  // Источник списка: Adesk (как всегда) или omg-finance — наша система
+  // учёта. Пока Adesk основной, оба списка живут рядом, чтобы их сравнивать.
+  const [source, setSource] = useState<Source>(() => {
+    try { return localStorage.getItem('uncat-source') === 'omg' ? 'omg' : 'adesk'; } catch { return 'adesk'; }
+  });
+  const [omgAvailable, setOmgAvailable] = useState(false);
+  const switchSource = (s: Source) => {
+    setSource(s);
+    try { localStorage.setItem('uncat-source', s); } catch { /* приватный режим */ }
+  };
   const [cardFilter, setCardFilter] = useState('');
   const [amountFilter, setAmountFilter] = useState('');
 
@@ -83,19 +96,20 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
     setError(null);
     setSlowHint(false);
     try {
-      const url = `/api/admin/uncategorized?days=${days}${force ? '&nocache=1' : ''}`;
-      const res = await apiFetch<{ items: UncategorizedTx[]; days: number; total: number; shown: number }>(
+      const url = `/api/admin/uncategorized?days=${days}${source === 'omg' ? '&source=omg' : ''}${force ? '&nocache=1' : ''}`;
+      const res = await apiFetch<{ items: UncategorizedTx[]; days: number; total: number; shown: number; omgAvailable?: boolean }>(
         url,
         { timeoutMs: LOAD_TIMEOUT_MS },
       );
       setItems(res.items);
       setTotal(res.total);
+      setOmgAvailable(Boolean(res.omgAvailable));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [days, source]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -188,6 +202,29 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
           </button>
         </div>
       </div>
+
+      {/* Источник списка: Adesk или наша система (omg-finance) */}
+      {(omgAvailable || source === 'omg') && (
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
+          <label className="text-xs text-gray-500 shrink-0">Источник:</label>
+          {(['adesk', 'omg'] as Source[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => switchSource(s)}
+              className={`text-xs px-2.5 py-1 rounded border ${
+                source === s ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'
+              }`}
+            >
+              {s === 'adesk' ? 'Adesk' : 'Наша система'}
+            </button>
+          ))}
+          {source === 'omg' && (
+            <span className="text-[11px] text-gray-400">
+              разнос уйдёт в нашу систему сразу, в Adesk — по совпадению суммы и карты
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Фильтры: последние 4 цифры карты + сумма */}
       <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -308,6 +345,7 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
         return (
           <AssignModal
             tx={tx}
+            source={source}
             chatId={chatId ?? null}
             onCancel={() => setOpenTxId(null)}
             onSuccess={() => {
@@ -326,11 +364,13 @@ export function AdminUncategorized({ chatId }: { chatId?: string | null } = {}) 
 
 function AssignModal({
   tx,
+  source,
   chatId,
   onCancel,
   onSuccess,
 }: {
   tx: UncategorizedTx;
+  source: Source;
   chatId: string | null;
   onCancel: () => void;
   onSuccess: () => void;
@@ -497,6 +537,7 @@ function AssignModal({
       await apiFetch(`/api/admin/uncategorized/${tx.txId}/assign`, {
         method: 'POST',
         body: JSON.stringify({
+          source,
           description: description.trim(),
           bankAccountId: tx.bankAccount.id,
           dateIso,

@@ -12,6 +12,7 @@ import { prisma } from '@/lib/db';
 import { adesk } from '@/lib/adesk/client';
 import { denyUnlessAuthed } from '@/lib/api-helpers';
 import { isCardTransaction } from '@/lib/retro-match';
+import { fetchOmgUncategorized, omgEnabled } from '@/lib/omg/client';
 
 // Список видит любой авторизованный сотрудник: разносить «неопознанные»
 // транзакции — общая работа, а не только админская. Ограничения остаются
@@ -65,8 +66,12 @@ async function handleGet(request: NextRequest) {
   // UI этот параметр не использует, поэтому поддержку убираем: всегда card-only.
   const withNonCard = false;
   const noCache = request.nextUrl.searchParams.get('nocache') === '1';
+  // source=omg — тот же список, но из omg-finance (наша система учёта).
+  // Пока Adesk основной, вкладка умеет показывать оба источника, чтобы их
+  // сравнивать. txId в этом режиме — id операции omg-finance (строка).
+  const source = request.nextUrl.searchParams.get('source') === 'omg' ? 'omg' : 'adesk';
 
-  const cacheKey = `${days}|${withNonCard ? 1 : 0}`;
+  const cacheKey = `${source}|${days}|${withNonCard ? 1 : 0}`;
   if (!noCache) {
     const hit = cache.get(cacheKey);
     if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
@@ -74,66 +79,95 @@ async function handleGet(request: NextRequest) {
     }
   }
 
-  const today = new Date();
-  const start = new Date(today);
-  start.setDate(start.getDate() - days);
-  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  type RawItem = {
+    txId: number | string;
+    amount: number;
+    date: string;
+    description: string;
+    isCard: boolean;
+    cardSuffix: string | null;
+    bankAccount: { id: number; name: string; legalEntity: string | null };
+  };
+  let availableRaw: RawItem[];
 
-  const bankAccounts = (await adesk.getBankAccounts()).bankAccounts || [];
-  const baById = new Map(bankAccounts.map((b) => [b.id, b]));
+  if (source === 'omg') {
+    const { items } = await fetchOmgUncategorized(days, withNonCard);
+    availableRaw = items.filter((it) => !(it.cardSuffix && EXCLUDED_CARDS.has(it.cardSuffix)));
+  } else {
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(start.getDate() - days);
+    const fmt = (d: Date) => d.toISOString().split('T')[0];
 
-  // Идём пакетами по 3 — Adesk на четвертом-пятом параллельном запросе
-  // начинает тайм-аутить (видели в rematch-логе). 3 — нагрузка комфортная.
-  const allTxs: { baId: number; tx: import('@/lib/adesk/types').AdeskTransaction }[] = [];
-  const CONCURRENCY = 3;
-  for (let i = 0; i < bankAccounts.length; i += CONCURRENCY) {
-    const batch = bankAccounts.slice(i, i + CONCURRENCY);
-    const results = await Promise.allSettled(
-      batch.map((ba) =>
-        adesk.listTransactions({
-          status: 'completed',
-          type: 'outcome',
-          bankAccount: ba.id,
-          rangeStart: fmt(start),
-          rangeEnd: fmt(today),
-        }).then((res) => ({ baId: ba.id, txs: res.transactions || [] })),
-      ),
-    );
-    for (const r of results) {
-      if (r.status !== 'fulfilled') {
-        console.error('[admin/uncategorized] listTransactions failed:', r.reason);
-        continue;
-      }
-      for (const tx of r.value.txs) {
-        allTxs.push({ baId: r.value.baId, tx });
+    const bankAccounts = (await adesk.getBankAccounts()).bankAccounts || [];
+    const baById = new Map(bankAccounts.map((b) => [b.id, b]));
+
+    // Идём пакетами по 3 — Adesk на четвертом-пятом параллельном запросе
+    // начинает тайм-аутить (видели в rematch-логе). 3 — нагрузка комфортная.
+    const allTxs: { baId: number; tx: import('@/lib/adesk/types').AdeskTransaction }[] = [];
+    const CONCURRENCY = 3;
+    for (let i = 0; i < bankAccounts.length; i += CONCURRENCY) {
+      const batch = bankAccounts.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map((ba) =>
+          adesk.listTransactions({
+            status: 'completed',
+            type: 'outcome',
+            bankAccount: ba.id,
+            rangeStart: fmt(start),
+            rangeEnd: fmt(today),
+          }).then((res) => ({ baId: ba.id, txs: res.transactions || [] })),
+        ),
+      );
+      for (const r of results) {
+        if (r.status !== 'fulfilled') {
+          console.error('[admin/uncategorized] listTransactions failed:', r.reason);
+          continue;
+        }
+        for (const tx of r.value.txs) {
+          allTxs.push({ baId: r.value.baId, tx });
+        }
       }
     }
+
+    // Фильтруем: без категории И без проекта, + только карточные (если не withNonCard),
+    // + не в EXCLUDED_CARDS (сотрудникам не должны показываться).
+    const uncategorized = allTxs.filter(({ tx }) => {
+      if (tx.category || tx.project) return false;
+      if (!withNonCard && !isCardTransaction(tx.description)) return false;
+      const cardMatch = /\d{4,6}\*+(\d{4})\b/.exec(tx.description || '');
+      if (cardMatch && EXCLUDED_CARDS.has(cardMatch[1])) return false;
+      return true;
+    });
+
+    // Убираем те, которые уже привязаны к какому-либо Payment в БД
+    // (у Adesk-tx категории может не быть, а связь у нас есть — не показываем).
+    const txIds = uncategorized.map(({ tx }) => tx.id);
+    const taken = txIds.length
+      ? await prisma.payment.findMany({
+          where: { adeskConfirmedTransactionId: { in: txIds } },
+          select: { adeskConfirmedTransactionId: true },
+        })
+      : [];
+    const takenSet = new Set(
+      taken.map((t) => t.adeskConfirmedTransactionId).filter(Boolean) as number[],
+    );
+
+    const availableRawAdesk = uncategorized.filter(({ tx }) => !takenSet.has(tx.id));
+    availableRaw = availableRawAdesk.map(({ baId, tx }) => {
+      const ba = baById.get(baId);
+      const cardMatch = /\d{4,6}\*+(\d{4})\b/.exec(tx.description || '');
+      return {
+        txId: tx.id,
+        amount: Math.abs(Number(tx.amount)),
+        date: tx.date,
+        description: tx.description || '',
+        isCard: isCardTransaction(tx.description),
+        cardSuffix: cardMatch ? cardMatch[1] : null,
+        bankAccount: { id: baId, name: ba?.name ?? '—', legalEntity: ba?.legalEntity?.name ?? null },
+      };
+    });
   }
-
-  // Фильтруем: без категории И без проекта, + только карточные (если не withNonCard),
-  // + не в EXCLUDED_CARDS (сотрудникам не должны показываться).
-  const uncategorized = allTxs.filter(({ tx }) => {
-    if (tx.category || tx.project) return false;
-    if (!withNonCard && !isCardTransaction(tx.description)) return false;
-    const cardMatch = /\d{4,6}\*+(\d{4})\b/.exec(tx.description || '');
-    if (cardMatch && EXCLUDED_CARDS.has(cardMatch[1])) return false;
-    return true;
-  });
-
-  // Убираем те, которые уже привязаны к какому-либо Payment в БД
-  // (у Adesk-tx категории может не быть, а связь у нас есть — не показываем).
-  const txIds = uncategorized.map(({ tx }) => tx.id);
-  const taken = txIds.length
-    ? await prisma.payment.findMany({
-        where: { adeskConfirmedTransactionId: { in: txIds } },
-        select: { adeskConfirmedTransactionId: true },
-      })
-    : [];
-  const takenSet = new Set(
-    taken.map((t) => t.adeskConfirmedTransactionId).filter(Boolean) as number[],
-  );
-
-  const availableRaw = uncategorized.filter(({ tx }) => !takenSet.has(tx.id));
   const totalAvailable = availableRaw.length;
 
   // Ищем «висящие» платежи сотрудников (PENDING_RETRO/NEEDS_REVIEW/ORPHANED)
@@ -179,30 +213,11 @@ async function handleGet(request: NextRequest) {
   }
 
   const items = availableRaw
-    .map(({ baId, tx }) => {
-      const ba = baById.get(baId);
-      // Маска карты идёт после 4-6 цифр BIN'а: «220445******2700».
-      // Без \d{4,6} впереди regexp жадно ловил «YANDEX*4121*GO» (это
-      // идентификатор мерчанта в имени терминала, а не карта).
-      const cardMatch = /\d{4,6}\*+(\d{4})\b/.exec(tx.description || '');
-      const cardSuffix = cardMatch ? cardMatch[1] : null;
-      const amountAbs = Math.abs(Number(tx.amount));
-      return {
-        txId: tx.id,
-        amount: amountAbs,
-        date: tx.date, // "DD.MM.YYYY"
-        description: tx.description || '',
-        isCard: isCardTransaction(tx.description),
-        // 4 цифры карты из маски «220445****NNNN» (для фильтра в UI)
-        cardSuffix,
-        bankAccount: {
-          id: baId,
-          name: ba?.name ?? '—',
-          legalEntity: ba?.legalEntity?.name ?? null,
-        },
-        pendingPayment: findHangingFor(tx.date, amountAbs, cardSuffix),
-      };
-    })
+    .map((it) => ({
+      ...it,
+      source,
+      pendingPayment: findHangingFor(it.date, it.amount, it.cardSuffix),
+    }))
     .sort((a, b) => {
       // Сортировка по дате (DD.MM.YYYY) — новее сверху
       const parse = (s: string) => {
@@ -216,7 +231,7 @@ async function handleGet(request: NextRequest) {
   // total = сколько НАЙДЕНО неопознанных до отсечения limit'ом. items.length —
   // сколько реально ушло в ответ. Если total > items.length, UI должен намекнуть
   // «показано X из Y» и/или предложить расширить период.
-  const body = { items, days, total: totalAvailable, shown: items.length };
+  const body = { items, days, total: totalAvailable, shown: items.length, source, omgAvailable: omgEnabled() };
   cache.set(cacheKey, { at: Date.now(), body });
   return Response.json(body);
 }
